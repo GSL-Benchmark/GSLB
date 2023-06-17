@@ -133,3 +133,7 @@ Currently, we have implement the following GSL algorithms:
 * HGSL [AAAI 2021], *Heterogeneous Graph Structure Learning for Graph Neural Networks*
 * HGP-SL [AAAI 2020], *Hierarchical Graph Pooling with Structure Learning*
 * VIB-GSL [AAAI 2022], *Graph Structure Learning with Variational Information Bottleneck*
+
+**Candidate algorithms**
+* NeuralSparse [ICML 2020], *Robust Graph Representation Learning via Neural Sparsification*
+* PTDNet [WSDM 2021], *Learning to Drop: Robust Graph Neural Network via Topological Denoising*
