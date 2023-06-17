@@ -59,7 +59,7 @@ Optional arguments:
 
 ``--gpu_num -g`` : the selected GPU number
 
-*Examples: Trains GRCN on Cora dataset, with the evaluation metric is accuracy.*
+*Examples: Train GRCN on Cora dataset, with the evaluation metric is accuracy.*
 
 ```
 python main.py --dataset cora --model GRCN --metric acc
