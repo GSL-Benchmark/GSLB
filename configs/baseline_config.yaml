@@ -1,0 +1,130 @@
+Default:
+  seed: 0
+  hidden: 32
+  sparse: False
+  lr: 0.001
+  weight_decay: 0
+  epochs: 300
+  dropout: 0.5
+
+GCN-Cora:
+  seed: 0
+  hidden: 32
+  sparse: False
+  lr: 0.005
+  weight_decay: 0.001
+  epochs: 300
+  dropout: 0.5
+
+GCN-Citeseer:
+  seed: 0
+  hidden: 32
+  sparse: False
+  lr: 0.005
+  weight_decay: 0.001
+  epochs: 300
+  dropout: 0.5
+
+GCN-Pubmed:
+  seed: 0
+  hidden: 32
+  sparse: False
+  lr: 0.005
+  weight_decay: 0.0005
+  epochs: 300
+  dropout: 0.5
+
+GCN-amazon-computers:
+  seed: 0
+  hidden: 64
+  sparse: False
+  lr: 0.0001
+  weight_decay: 0
+  epochs: 4000
+  dropout: 0.5
+
+GCN-amazon-photo:
+  seed: 0
+  hidden: 64
+  sparse: False
+  lr: 0.0001
+  weight_decay: 0.0001
+  epochs: 5000
+  dropout: 0.5
+
+GCN-ogbn-arxiv:
+  seed: 0
+  hidden: 256
+  sparse: True
+  lr: 0.01
+  weight_decay: 0
+  epochs: 500
+  dropout: 0.5
+
+GCN-roman-empire:
+  seed: 0
+  hidden: 512
+  sparse: True
+  lr: 0.005
+  weight_decay: 0
+  epochs: 1000
+  dropout: 0.2
+
+GCN-amazon-ratings:
+  seed: 0
+  hidden: 512
+  sparse: True
+  lr: 0.005
+  weight_decay: 0
+  epochs: 1000
+  dropout: 0.2
+
+GAT-Cora:
+  seed: 0
+  hidden: 32
+  sparse: False
+  lr: 0.005
+  weight_decay: 0.001
+  epochs: 300
+  alpha: 0.2
+  nheads: 8
+
+GAT-Citeseer:
+  seed: 0
+  hidden: 32
+  sparse: False
+  lr: 0.005
+  weight_decay: 0.001
+  epochs: 300
+  alpha: 0.2
+  nheads: 8
+
+GAT-Pubmed:
+  seed: 0
+  hidden: 32
+  sparse: True
+  lr: 0.001
+  weight_decay: 0.001
+  epochs: 300
+  alpha: 0.2
+  nheads: 8
+
+GAT-amazon-computers:
+  seed: 0
+  hidden: 64
+  sparse: True
+  lr: 0.0001
+  weight_decay: 0
+  epochs: 3000
+  alpha: 0.2
+  nheads: 8
+
+GAT-amazon-photo:
+  seed: 0
+  hidden: 64
+  sparse: True
+  lr: 0.0001
+  weight_decay: 0
+  epochs: 3000
+  alpha: 0.2
+  nheads: 8

@@ -1,0 +1,17 @@
+Default:
+  dataset: cora
+
+Cora:
+  dataset: cora
+  seed: 0
+  hidden: 32
+  epochs: 3000
+  temp_N: 50
+  temp_r: 0.001
+  k: 5
+  hidden_channel: 128
+  dropout: 0.5
+  num_layers: 2
+  lr: 0.001
+  weight_decay: 0.001
+  patience: 100

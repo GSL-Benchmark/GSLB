@@ -1,0 +1,42 @@
+Default:
+  base: 'gcn'
+  seed: 42
+  lr: 0.01
+  weight_decay: 5.0e-4
+  hidden: 32
+  dropout: 0.5
+  activation: 'relu'
+  epoch: 200
+  iter: 30
+  k: 9
+  threshold: 0.6
+  tolerance: 0.01
+  debug: True
+Cora:
+  base: 'gcn'
+  seed: 42
+  lr: 0.01
+  weight_decay: 5.0e-4
+  hidden: 16
+  dropout: 0.5
+  activation: 'relu'
+  epoch: 200
+  iter: 30
+  k: 9
+  threshold: 0.5
+  tolerance: 0.01
+  debug: True
+Citeseer:
+  base: 'gcn'
+  seed: 9
+  lr: 0.01
+  weight_decay: 5.0e-4
+  hidden: 16
+  dropout: 0.5
+  activation: 'relu'
+  epoch: 200
+  iter: 30
+  k: 9
+  threshold: 0.5
+  tolerance: 0.01
+  debug: True

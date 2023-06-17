@@ -1,0 +1,28 @@
+Default:
+  seed: 12345
+  backbone: 'GCN'
+  graph_type: 'prob'
+  graph_metric_type: 'mlp'
+  repar: True
+  num_layers: 2
+  hidden_dim: 16
+  folds: 10
+  epochs: 200
+  lr: 0.001
+  lr_decay_factor: 0.5
+  lr_decay_step_size: 50
+  weight_decay: 5*10**-5
+  batch_size: 100
+  test_batch_size: 100
+  beta: 0.00001
+  IB_size: 16
+  num_per: 16
+  feature_denoise: False
+  top_k: 10
+  epsilon: 0.3
+  graph_skip_conn: 0.0
+  graph_include_self: True
+
+REDDIT-BINARY:
+  epochs: 200
+  feature_denoise: False

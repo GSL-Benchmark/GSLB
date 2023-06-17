@@ -1,0 +1,41 @@
+Default:
+  dataset: cora
+  jt: 0.03
+  threshold: 1
+  recover_percent: 0.2
+  beta: 2
+  nb_epochs: 10000
+  cos: 0.1
+  k: 5
+  alpha: -0.3
+  sparse: False
+  num_hidden_eval: 16
+  num_layers_eval: 2
+  dropout_eval: 0.5
+  dropedge_rate_eval: 0
+  lr_cls: 0.01
+  weight_decay_cls: 0.0005
+  num_epochs_cls: 200
+  seed: 1
+
+Cora-FP:
+  dataset: cora
+  jt: 0.03
+  threshold: 1
+  recover_percent: 0.2
+  beta: 2
+  nb_epochs: 10000
+  cos: 0.1
+  k: 5
+  alpha: -0.3
+  sparse: False
+  num_hidden_eval: 16
+  num_layers_eval: 2
+  dropout_eval: 0.5
+  dropedge_rate_eval: 0
+  lr_cls: 0.01
+  weight_decay_cls: 0.0005
+  num_epochs_cls: 200
+  seed: 1
+  lr: 0.01
+  weight_decay: 0.0005

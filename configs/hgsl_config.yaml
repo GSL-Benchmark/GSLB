@@ -1,0 +1,46 @@
+Default:
+  seed: 0
+  dataset: 'acm'
+  lr: 0.01
+  conv_method: 'gcn'
+  num_head: 2
+  early_stop: 80
+  adj_norm_order: 1
+  feat_norm: -1
+  emb_dim: 64
+  com_feat_dim: 16
+  weight_decay: 5e-4
+  model: 'HGSL'
+  epochs: 200
+  exp_name: 'debug'
+  save_weights: False
+
+acm:
+  alpha: 1
+  dropout: 0
+  fgd_th: 0.8
+  fgh_th: 0.2
+  sem_th: 0.6
+  mp_list: ['psp', 'pap', 'pspap']
+  data_type: 'pas'
+  relation_list: 'p-a+a-p+p-s+s-p'
+
+dblp:
+  alpha: 4.5
+  dropout: 0.2
+  fgd_th: 0.99
+  fgh_th: 0.99
+  sem_th: 0.4
+  mp_list: ['apcpa']
+  data_type: 'apc'
+  relation_list: 'p-a+a-p+p-c+c-p'
+
+yelp:
+  alpha: 0.5
+  dropout: 0.2
+  fgd_th: 0.8
+  fgh_th: 0.1
+  sem_th: 0.2
+  mp_list: ['bub', 'bsb', 'bublb', 'bubsb']
+  data_type: 'busl'
+  relation_list: 'b-u+u-b+b-s+s-b+b-l+l-b'

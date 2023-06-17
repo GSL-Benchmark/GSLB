@@ -1,0 +1,38 @@
+Default:
+  seed: 0
+  folds: 10
+  epochs: 1000
+  batch_size: 512
+  sample: True
+  lr: 1.0e-3
+  weight_decay: 1.0e-3
+  pool_ratio: 0.5
+  num_layers: 3
+  dropout: 0
+  lamb: 1.0
+  patience: 100
+  eval_step: 1
+  hidden_dim: 512
+  sparse_attn: True
+  sl: True
+
+IMDB-BINARY:
+  batch_size: 256
+  hidden_dim: 64
+  lr: 1.0e-3
+  dropout: 0
+  weight_decay: 0
+
+REDDIT-BINARY:
+  batch_size: 256
+  hidden_dim: 64
+  lr: 1.0e-3
+  dropout: 0
+  weight_decay: 0
+
+COLLAB:
+  batch_size: 1024
+  hidden_dim: 64
+  lr: 1.0e-3
+  dropout: 0
+  weight_decay: 0

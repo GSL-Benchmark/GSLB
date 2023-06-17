@@ -1,0 +1,57 @@
+Default:
+  dataset: cora
+  sedd: 1
+
+cora:
+  dataset: cora
+  seed: 0
+  sparse: True
+  hid_graph: "100:10"
+  nhid: 32
+  F: relu
+  F_graph: tanh
+  dropout: 0.5
+  compl_param: "150"
+  normalize: True
+  reduce: knn
+  lr: 0.005
+  weight_decay: 0.005
+  lr_graph: 0.001
+  weight_decay_graph: 0.
+  num_epochs: 300
+
+citeseer:
+  dataset: citeseer
+  seed: 0
+  sparse: True
+  hid_graph: "100:10"
+  nhid: 32
+  F: relu
+  F_graph: tanh
+  dropout: 0.5
+  compl_param: "300"
+  normalize: True
+  reduce: knn
+  lr: 0.005
+  weight_decay: 0.005
+  lr_graph: 0.001
+  weight_decay_graph: 0.
+  num_epochs: 200
+
+pubmed:
+  dataset: pubmed
+  seed: 0
+  sparse: True
+  hid_graph: "100:10"
+  nhid: 32
+  F: relu
+  F_graph: tanh
+  dropout: 0.5
+  compl_param: "1"
+  normalize: True
+  reduce: knn
+  lr: 0.005
+  weight_decay: 0.005
+  lr_graph: 0.001
+  weight_decay_graph: 0.
+  num_epochs: 300

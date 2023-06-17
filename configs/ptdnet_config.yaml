@@ -1,0 +1,32 @@
+Default:
+  dataset: cora
+  seed: 0
+  sparse: False
+  hiddens: 256
+  conv_bias: False
+  denoise_hidden_1: 16
+  denoise_hidden_2: 0
+  weight_decay: 5.0e-4
+  lr: 0.001
+  epochs: 1000
+  init_temperature: 2.0
+  temperature_decay: 0.99
+  outL: 3
+  L: 1
+  dropout: 0.5
+  gamma: -0.0
+  zeta: 1.01
+  lambda1: 0.1
+  lambda3: 0.01
+  coff_consis: 0.01
+  k_svd: 1
+  patience: 100
+
+Cora:
+  dataset: cora
+  hiddens: 128
+
+Citeseer:
+  dataset: citeseer
+  hiddens: 128
+  weight_decay: 1.0e-3
