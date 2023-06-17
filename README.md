@@ -105,7 +105,7 @@ eval_metric = {
   'micro-f1': micro_f1
 }[metric]
 
-model = GRNC(data.num_feat, data.num_class, evel_metric,
+model = GRCN(data.num_feat, data.num_class, evel_metric,
             config_path, dataset_name, device)
 ```
 
