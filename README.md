@@ -37,7 +37,7 @@ python main.py --dataset dataset_name --model model_name -n num_trails -g 0 --us
 
 Optional arguments:
 
-``--datase `` : the name of graph dataset
+``--dataset`` : the name of graph dataset
 
 ``--model`` : the name of GSL model
 
@@ -53,13 +53,13 @@ Optional arguments:
 
 ``--use_mettack`` : whether to use the structure after being attacked by mettack
 
-``--ptb_rate`` : the perturbation rate
+``--ptb_rate -p`` : the perturbation rate
 
 ``--metric`` : the evaluation metric
 
 ``--gpu_num -g`` : the selected GPU number
 
-*Examples: Train GRCN on Cora dataset, with the evaluation metric is accuracy.*
+*Example: Train GRCN on Cora dataset, with the evaluation metric is accuracy.*
 
 ```
 python main.py --dataset cora --model GRCN --metric acc
