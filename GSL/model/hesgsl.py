@@ -6,44 +6,74 @@ import dgl
 import dgl.function as fn
 
 from GSL.model import BaseModel
-from GSL.utils import knn_fast, top_k, get_random_mask, accuracy, get_homophily
+from GSL.utils import knn_fast, top_k
 from GSL.encoder import GCNConv_dgl, GCNConv, GCN, GCN_dgl
+
+def get_random_mask(features, r, scale, dataset):
+
+    if dataset == 'ogbn-arxiv' or dataset == 'minist' or dataset == 'cifar10' or dataset == 'fashionmnist':
+        probs = torch.full(features.shape, 1 / r)
+        mask = torch.bernoulli(probs)
+        return mask
+
+    nones = torch.sum(features > 0.0).float()
+    nzeros = features.shape[0] * features.shape[1] - nones
+    pzeros = nones / nzeros / r * scale
+
+    probs = torch.zeros(features.shape).to(features.device)
+    probs[features == 0.0] = pzeros
+    probs[features > 0.0] = 1 / r
+
+    mask = torch.bernoulli(probs)
+
+    return mask
+
+
+def get_homophily(adj, labels, dgl_=False):
+    if dgl_:
+        src, dst = adj.edges()
+    else:
+        src, dst = adj.detach().nonzero().t()
+    homophily_ratio = 1.0 * torch.sum((labels[src] == labels[dst])) / src.shape[0]
+
+    return homophily_ratio
+
 
 class HESGSL(BaseModel):
     """
     Homophily-Enhanced Self-Supervision for Graph Structure Learning: Insights and Directions (TNNLS 2023')
     """
-    def __init__(self, device, config, nfeat, nclass):
-        super(HESGSL, self).__init__(device)
-        self.nclass = nclass
-        self.hid_dim_dae = config.hid_dim_dae
-        self.hid_dim_cla = config.hid_dim_cla
-        self.nlayers = config.nlayers
-        self.dropout_cla = config.dropout_cla
-        self.dropout_adj = config.dropout_adj
-        self.mlp_dim = config.mlp_dim
-        self.k = config.k
-        self.sparse = config.sparse
-        self.lr = config.lr
-        self.lr_cla = config.lr_cla
-        self.weight_decay = config.weight_decay
-        self.num_epochs = config.num_epochs
-        self.epochs_pre = config.epochs_pre
-        self.epochs_hom = config.epochs_hom
-        self.dataset = config.dataset
-        self.ratio = config.ratio
-        self.scale = config.scale
-        self.num_hop = config.num_hop
-        self.alpha = config.alpha
-        self.beta = config.beta
-        self.patience = config.patience
-        self.eval_step = config.eval_step
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device):
+        super(HESGSL, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
+        self.nclass = num_classes
+        self.hid_dim_dae = self.config.hid_dim_dae
+        self.hid_dim_cla = self.config.hid_dim_cla
+        self.nlayers = self.config.nlayers
+        self.dropout_cla = self.config.dropout_cla
+        self.dropout_adj = self.config.dropout_adj
+        self.mlp_dim = self.config.mlp_dim
+        self.k = self.config.k
+        self.sparse = self.config.sparse
+        self.lr = self.config.lr
+        self.lr_cla = self.config.lr_cla
+        self.weight_decay = self.config.weight_decay
+        self.num_epochs = self.config.num_epochs
+        self.epochs_pre = self.config.epochs_pre
+        self.epochs_hom = self.config.epochs_hom
+        self.dataset = self.config.dataset
+        self.ratio = self.config.ratio
+        self.scale = self.config.scale
+        self.num_hop = self.config.num_hop
+        self.alpha = self.config.alpha
+        self.beta = self.config.beta
+        self.patience = self.config.patience
+        self.eval_step = self.config.eval_step
 
-        self.model_dae = GCN_DAE(nfeat, self.hid_dim_dae, nfeat, self.nlayers, self.dropout_cla, self.dropout_adj, self.mlp_dim, self.k, self.sparse).to(device)
+        self.model_dae = GCN_DAE(num_features, self.hid_dim_dae, num_features, self.nlayers, self.dropout_cla, self.dropout_adj, self.mlp_dim, self.k, self.sparse).to(device)
         if self.sparse:
-            self.model_cla = GCN_dgl(nfeat, self.hid_dim_cla, nclass, self.nlayers, self.dropout_cla, self.dropout_adj)
+            self.model_cla = GCN_dgl(num_features, self.hid_dim_cla, num_classes, self.nlayers, self.dropout_cla, self.dropout_adj)
         else:
-            self.model_cla = GCN(nfeat, self.hid_dim_cla, nclass, self.nlayers, self.dropout_cla, self.dropout_adj, self.sparse)
+            self.model_cla = GCN(num_features, self.hid_dim_cla, num_classes, self.nlayers, self.dropout_cla, self.dropout_adj, self.sparse)
 
         self.optimizer_dat = torch.optim.Adam(self.model_dae.parameters(), lr=self.lr, weight_decay=float(0.0))
         self.optimizer_cla = torch.optim.Adam(self.model_cla.parameters(), lr=self.lr_cla, weight_decay=self.weight_decay)
@@ -73,12 +103,14 @@ class HESGSL(BaseModel):
         loss = F.nll_loss(logits[mask], labels[mask], reduction='mean')
         return loss
 
-    def fit(self, features, labels, train_mask, val_mask, test_mask):
-        features = features.to(self.device)
-        labels = labels.to(self.device)
-        train_mask = train_mask.to(self.device)
-        val_mask = val_mask.to(self.device)
-        test_mask = test_mask.to(self.device)
+    def fit(self, dataset, split_num=0):
+        adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
+        if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
+            train_mask = dataset.train_masks[split_num % 10]
+            val_mask = dataset.val_masks[split_num % 10]
+            test_mask = dataset.test_masks[split_num % 10]
+        else:
+            train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
 
         best_val, best_test = float('-inf'), 0
         hom_ratio_val = 0
@@ -117,9 +149,9 @@ class HESGSL(BaseModel):
             unnorm_adj = self.model_dae.get_unnorm_adj(features)
             logits = self.model_cla(features, adj)
 
-            train_result = accuracy(logits[train_mask], labels[train_mask])
-            val_result = accuracy(logits[val_mask], labels[val_mask])
-            test_result = accuracy(logits[test_mask], labels[test_mask])
+            train_result = self.metric(logits[train_mask], labels[train_mask])
+            val_result = self.metric(logits[val_mask], labels[val_mask])
+            test_result = self.metric(logits[test_mask], labels[test_mask])
             hom_ratio = get_homophily(adj, labels, self.sparse).item()
 
             if epoch >= self.epochs_pre:

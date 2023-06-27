@@ -232,11 +232,7 @@ class Dataset:
             + "cornell, wisconsin, texas, actor"
         )
 
-        assert isinstance(split_num, int), ("Variable type error: split_num must be an integer.")
-        assert 0 <= split_num <= 9, "Input parameter error: split_num must be between 0 and 10."
-
         self.seed = seed
-        self.split_num = split_num
 
         if platform.system() == "Windows":
             self.root = root
