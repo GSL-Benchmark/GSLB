@@ -13,7 +13,7 @@ from torch.optim.optimizer import required
 from GSL.learner import FullParam
 from GSL.model import BaseModel
 from GSL.processor import NonLinearize, Normalize
-from GSL.utils import accuracy, torch_f1_score
+from GSL.utils import accuracy
 
 
 class ProxOperators:

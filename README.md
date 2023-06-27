@@ -5,7 +5,7 @@ GSLB is a Graph Structure Learning (GSL) library and benchmark based on [DGL](ht
 ## 📔 What is Graph Structure Learning?
 
 <p align="center">
-<img src="pipeline.png" width="90%" class="center" alt="pipeline"/>
+<img src="pipeline.png" width="100%" class="center" alt="pipeline"/>
 </p>
 
 Graph Structure Learning (GSL) aims to optimize both the parameters of Graph Neural Networks (GNNs) and the computation graph structure simultaneously. GSL methods start with input features and an optimal initial graph structure. Its corresponding computation graph is iteratively refined through a structure learning module. With the refined computation graph ,GNNs are used to generate graph representations. Then parameters of the GNNs and the structure modeling module are jointly updated, either simultaneously or alternatively, util a preset stopping condition is satisfied.

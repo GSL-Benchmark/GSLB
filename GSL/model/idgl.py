@@ -13,7 +13,7 @@ from GSL.metric import *
 from GSL.model import BaseModel
 from GSL.processor import Normalize, ThresholdSparsify
 from GSL.utils import (AverageMeter, DummyLogger, SquaredFrobeniusNorm,
-                       accuracy, diff, torch_f1_score)
+                       accuracy, diff)
 
 VERY_SMALL_NUMBER = 1e-12
 _SAVED_WEIGHTS_FILE = "params.saved"

@@ -12,7 +12,7 @@ from GSL.encoder import GCN
 from GSL.metric import CosineSimilarity
 from GSL.model import BaseModel
 from GSL.processor import KNNSparsify
-from GSL.utils import accuracy, get_homophily, prob_to_adj, torch_f1_score
+from GSL.utils import accuracy, get_homophily, prob_to_adj
 
 
 class GEN(BaseModel):
