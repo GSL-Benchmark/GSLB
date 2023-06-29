@@ -17,14 +17,20 @@ class SUBLIME(BaseModel):
     '''
     Towards Unsupervised Deep Graph Structure Learning (WWW 2022')
     '''
-    def __init__(self, config, device):
-        super(SUBLIME, self).__init__(device=device)
-        self.config = config
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device):
+        super(SUBLIME, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
+        self.num_features = num_features
+        self.num_classes = num_classes
 
+    def fit(self, dataset, split_num=0):
+        adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
+        if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
+            train_mask = dataset.train_masks[split_num % 10]
+            val_mask = dataset.val_masks[split_num % 10]
+            test_mask = dataset.test_masks[split_num % 10]
+        else:
+            train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
 
-    def fit(self, features, adj, labels, train_mask, val_mask, test_mask):
-        nfeats = features.shape[1]
-        nclass = labels.max().item() + 1
 
         if self.config.mode == 'structure_inference':
             if self.config.sparse:
@@ -32,10 +38,11 @@ class SUBLIME(BaseModel):
             else:
                 anchor_adj_raw = torch.eye(features.shape[0])
         elif self.config.mode == 'structure_refinement':
-            if self.config.sparse:
-                anchor_adj_raw = adj
-            else:
-                anchor_adj_raw = torch.from_numpy(adj)
+            # if self.config.sparse:
+            #     anchor_adj_raw = adj
+            # else:
+            #     anchor_adj_raw = torch.from_numpy(adj)
+            anchor_adj_raw = adj
 
         anchor_adj = normalize(anchor_adj_raw, 'sym', self.config['sparse'])
 
@@ -58,7 +65,7 @@ class SUBLIME(BaseModel):
         elif self.config.learner == 'att':
             graph_learner = AttLearner(metric, processors, 2, features.shape[1], activation, self.config.sparse)
 
-        model = GCL(nlayers=self.config.num_layers, in_dim=nfeats, hidden_dim=self.config.num_hidden,
+        model = GCL(nlayers=self.config.num_layers, in_dim=self.num_features, hidden_dim=self.config.num_hidden,
                          emb_dim=self.config.num_rep_dim, proj_dim=self.config.num_proj_dim,
                          dropout=self.config.dropout, dropout_adj=self.config.dropedge_rate, sparse=self.config.sparse)
 
@@ -76,44 +83,43 @@ class SUBLIME(BaseModel):
             anchor_adj = anchor_adj.to(self.device)
 
         best_test_acc, best_val_acc = 0, 0
-        with tqdm(total=self.config.num_epochs, desc='(SUBLIME)',
-                  bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}{postfix}]') as pbar:
-            for epoch in range(self.config.num_epochs):
-                # Training
-                model.train()
-                graph_learner.train()
-                loss, Adj = self.loss_gcl(model, graph_learner, features, anchor_adj)
+        for epoch in range(self.config.num_epochs):
+            # Training
+            model.train()
+            graph_learner.train()
+            loss, Adj = self.loss_gcl(model, graph_learner, features, anchor_adj)
 
-                optimizer_cl.zero_grad()
-                optimizer_learner.zero_grad()
-                loss.backward()
-                optimizer_cl.step()
-                optimizer_learner.step()
+            optimizer_cl.zero_grad()
+            optimizer_learner.zero_grad()
+            loss.backward()
+            optimizer_cl.step()
+            optimizer_learner.step()
 
-                # Structure Bootstrapping
-                if (1 - self.config.tau) and (self.config.c == 0 or epoch % self.config.c == 0):
-                    if self.config.sparse:
-                        learned_adj_torch_sparse = dgl_graph_to_torch_sparse(Adj)
-                        anchor_adj_torch_sparse = anchor_adj_torch_sparse * self.config.tau \
-                                                    + learned_adj_torch_sparse * (1 - self.config.tau)
-                        anchor_adj = torch_sparse_to_dgl_graph(anchor_adj_torch_sparse)
-                    else:
-                        anchor_adj = anchor_adj * self.config.tau + Adj.detach() * (1 - self.config.tau)
+            # Structure Bootstrapping
+            if (1 - self.config.tau) and (self.config.c == 0 or epoch % self.config.c == 0):
+                if self.config.sparse:
+                    learned_adj_torch_sparse = dgl_graph_to_torch_sparse(Adj)
+                    anchor_adj_torch_sparse = anchor_adj_torch_sparse * self.config.tau \
+                                                + learned_adj_torch_sparse * (1 - self.config.tau)
+                    anchor_adj = torch_sparse_to_dgl_graph(anchor_adj_torch_sparse)
+                else:
+                    anchor_adj = anchor_adj * self.config.tau + Adj.detach() * (1 - self.config.tau)
 
-                # Evaluate
-                if epoch % 20 == 0:
-                    ClsEval = ClsEvaluator('GCN', self.config, nfeats, nclass, self.device)
-                    result = ClsEval(features, anchor_adj, train_mask, \
-                                                val_mask, test_mask, labels)
-                    val_acc, test_acc = result['Acc_val'], result['Acc_test']
-                    if val_acc > best_val_acc:
-                        best_test_acc = test_acc
-                        best_val_acc = val_acc
-                        self.Adj = anchor_adj
+            # Evaluate
+            if epoch % 20 == 0:
+                ClsEval = ClsEvaluator('GCN', self.config, self.num_features, self.num_classes, self.device)
+                result = ClsEval(features, anchor_adj, train_mask, \
+                                            val_mask, test_mask, labels)
+                val_acc, test_acc = result['Acc_val'], result['Acc_test']
+                if val_acc > best_val_acc:
+                    self.best_test_acc = test_acc
+                    best_val_acc = val_acc
+                    self.Adj = anchor_adj
 
-                pbar.set_postfix({'Epoch': epoch+1, 'Loss': loss.item(), 'Acc_val': val_acc, 'Acc_test': test_acc})
-                pbar.update(1)
-        print("Best Test ACC: ", best_test_acc)
+                print(f'Epoch: {epoch: 02d}, '
+                      f'Loss: {loss:.4f}, '
+                      f'Valid: {100 * val_acc:.2f}%, '
+                      f'Test: {100 * test_acc:.2f}%')
 
 
 

@@ -1,3 +1,7 @@
+<p align="center">
+<img src="logo.jpeg" width="100%" class="center" alt="logo"/>
+</p>
+
 # Graph Structure Learning Benchmark (GSLB)
 
 GSLB is a Graph Structure Learning (GSL) library and benchmark based on [DGL](https://github.com/dmlc/dgl) and [PyTorch](https://pytorch.org/). We integrate diverse datasets and state-of-the-art GSL models.

@@ -29,7 +29,7 @@ Default:
   maskfeat_rate_learner: 0.7
   contrast_batch_size: 0
 
-Cora:
+cora:
   seed: 1
   dataset: cora
   lr: 0.01
@@ -60,9 +60,9 @@ Cora:
   maskfeat_rate_learner: 0.7
   contrast_batch_size: 0
 
-Citeseer:
+citeseer:
   seed: 1
-  dataset: cora
+  dataset: citeseer
   lr: 0.001
   lr_cls: 0.001
   num_hidden: 512
@@ -91,9 +91,9 @@ Citeseer:
   maskfeat_rate_learner: 0.6
   contrast_batch_size: 0
 
-Pubmed:
+pubmed:
   seed: 1
-  dataset: cora
+  dataset: pubmed
   lr: 0.001
   lr_cls: 0.01
   num_hidden: 128
