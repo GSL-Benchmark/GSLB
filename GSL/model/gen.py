@@ -16,26 +16,25 @@ from GSL.utils import accuracy, get_homophily, prob_to_adj
 
 
 class GEN(BaseModel):
-    def __init__(self, device, config):
-        super().__init__(device)
-        self.config = config
-        self.device = device
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device):
+        super(GEN, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
         # self.knn = KNNGraphFromFeature(
         #     k=self.config["k"], metric="minkowski", i=self.config["i"]
         # )
+        self.config.update({"num_feat": num_features, "num_class": num_classes})
         self.base_model = GCN(
-            config["num_feat"],
-            config["hidden"],
-            config["num_class"],
+            self.config.num_feat,
+            self.config.hidden,
+            self.config.num_class,
             num_layers=2,
-            dropout=config["dropout"],
+            dropout=self.config.dropout,
             dropout_adj=0.0,
             sparse=False,
             activation_last="log_softmax",
         )
         self.best_acc_val = 0.0
         self.iter = 0
-        self.k = config["k"]
+        self.k = self.config.k
 
     def knn(self, feature):
         adj = np.zeros((self.num_node, self.num_node), dtype=np.int64)
@@ -49,16 +48,38 @@ class GEN(BaseModel):
         # adj_float = processor(dist).detach().cpu().numpy()
         # return (adj_float > 0).astype(np.int64)
 
-    def fit(self, features, adj, labels, mask_train, mask_val):
+    def fit(self, dataset, split_num=0):
+        adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
+        if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
+            train_mask = dataset.train_masks[split_num % 10]
+            val_mask = dataset.val_masks[split_num % 10]
+            test_mask = dataset.test_masks[split_num % 10]
+        else:
+            train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
+
+        if adj.is_sparse:
+            indices = adj.coalesce().indices()
+            values = adj.coalesce().values()
+            shape = adj.coalesce().shape
+            num_nodes = features.shape[0]
+            loop_edge_index = torch.stack([torch.arange(num_nodes), torch.arange(num_nodes)]).to(adj.device)
+            loop_edge_index = torch.cat([indices, loop_edge_index], dim=1)
+            loop_values = torch.ones(num_nodes).to(adj.device)
+            loop_values = torch.cat([values, loop_values], dim=0)
+            adj = torch.sparse_coo_tensor(indices=loop_edge_index, values=loop_values, size=shape)
+        else:
+            adj += torch.eye(adj.shape[0]).to(self.device)
+            # adj = adj.to_sparse()
+        
         self.num_class = self.config["num_class"]
-        self.num_node = self.config["num_node"]
+        self.num_node = features.shape[0]
 
         homophily = get_homophily(label=labels, adj=adj)
         estimator = EstimateAdj(
             features,
             labels,
             adj,
-            torch.where(mask_train)[0],
+            torch.where(train_mask)[0],
             self.num_class,
             self.num_node,
             homophily,
@@ -66,7 +87,7 @@ class GEN(BaseModel):
 
         t_total = time.time()
         for iter in range(self.config["iter"]):
-            self.train_base_model(features, adj, labels, mask_train, mask_val, iter)
+            self.train_base_model(features, adj, labels, train_mask, val_mask, iter)
 
             estimator.reset_obs()
             estimator.update_obs(self.knn(features))
@@ -87,8 +108,9 @@ class GEN(BaseModel):
             "Best validation accuracy:{:.4f}".format(self.best_acc_val),
             "EM iterations:{:04d}\n".format(iterations),
         )
+        self.best_result = self.test(features, labels, test_mask)
 
-    def train_base_model(self, features, adj, labels, mask_train, mask_val, iter):
+    def train_base_model(self, features, adj, labels, train_mask, val_mask, iter):
         best_acc_val = 0
         optimizer = optim.Adam(
             self.base_model.parameters(),
@@ -102,8 +124,8 @@ class GEN(BaseModel):
             optimizer.zero_grad()
 
             hidden_output, output = self.base_model(features, adj, return_hidden=True)
-            loss_train = F.nll_loss(output[mask_train], labels[mask_train])
-            acc_train = accuracy(output[mask_train], labels[mask_train])
+            loss_train = F.nll_loss(output[train_mask], labels[train_mask])
+            acc_train = accuracy(output[train_mask], labels[train_mask])
             loss_train.backward()
             optimizer.step()
 
@@ -111,8 +133,8 @@ class GEN(BaseModel):
             self.base_model.eval()
             hidden_output, output = self.base_model(features, adj, return_hidden=True)
 
-            loss_val = F.nll_loss(output[mask_val], labels[mask_val])
-            acc_val = accuracy(output[mask_val], labels[mask_val])
+            loss_val = F.nll_loss(output[val_mask], labels[val_mask])
+            acc_val = accuracy(output[val_mask], labels[val_mask])
 
             if acc_val > best_acc_val:
                 best_acc_val = acc_val

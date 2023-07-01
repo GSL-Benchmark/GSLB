@@ -1,8 +1,10 @@
-from GSL.learner import *
-import torch.nn as nn
-import numpy as np
 import easydict
+import numpy as np
+import torch.nn as nn
 import yaml
+
+from GSL.learner import *
+
 
 class BaseModel(nn.Module):
     '''
@@ -34,7 +36,8 @@ class BaseModel(nn.Module):
 
         all_config = configs[0]
         config = all_config.Default
-        dataset_config = all_config[dataset]
-        config.update(dataset_config)
+        dataset_config = all_config.get(dataset, None)
+        if dataset_config is not None:
+            config.update(dataset_config)
         self.config = config
     

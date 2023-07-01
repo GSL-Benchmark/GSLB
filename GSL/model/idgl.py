@@ -24,11 +24,11 @@ class IDGL(BaseModel):
     Iterative Deep Graph Learning for Graph Neural Networks: Better and Robust Node Embeddings (NeurIPS 2020')
     """
 
-    def __init__(self, learner=None, device="cpu", model=None, config=None):
-        super(IDGL, self).__init__(device)
-        self.device = device
-        self.model = GraphClf(config, device).to(device)
-        self.config = config
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device):
+        super(IDGL, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
+        self.config.update({"num_feat": num_features, "num_class": num_classes})
+        self.model = GraphClf(self.config, device).to(device)
+        self.config = self.config
         self._train_metrics = {"nloss": AverageMeter(), "acc": AverageMeter()}
         self._dev_metrics = {"nloss": AverageMeter(), "acc": AverageMeter()}
         self._train_loss = AverageMeter()
@@ -38,18 +38,45 @@ class IDGL(BaseModel):
         self.metric_name = "acc"
         self._init_optimizer()
         self.logger = DummyLogger(
-            config, dirname=config["out_dir"], pretrained=config["pretrained"]
+            self.config, dirname=self.config["out_dir"], pretrained=self.config["pretrained"]
         )
         self.net_module = GraphClf
         self.dirname = self.logger.dirname
-        seed = config.get("seed", 42)
+        seed = self.config.get("seed", 42)
         np.random.seed(seed)
         torch.manual_seed(seed)
         if self.device != "cpu":
             torch.cuda.manual_seed(seed)
         self.is_test = False
 
-    def fit(self, features, adj, labels, idx_train, idx_val):
+    def fit(self, dataset, split_num=0):
+        adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
+        if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
+            train_mask = dataset.train_masks[split_num % 10]
+            val_mask = dataset.val_masks[split_num % 10]
+            test_mask = dataset.test_masks[split_num % 10]
+        else:
+            train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
+        
+
+        if adj.is_sparse:
+            indices = adj.coalesce().indices()
+            values = adj.coalesce().values()
+            shape = adj.coalesce().shape
+            num_nodes = features.shape[0]
+            loop_edge_index = torch.stack([torch.arange(num_nodes), torch.arange(num_nodes)]).to(adj.device)
+            loop_edge_index = torch.cat([indices, loop_edge_index], dim=1)
+            loop_values = torch.ones(num_nodes).to(adj.device)
+            loop_values = torch.cat([values, loop_values], dim=0)
+            adj = torch.sparse_coo_tensor(indices=loop_edge_index, values=loop_values, size=shape)
+        else:
+            adj += torch.eye(adj.shape[0]).to(self.device)
+            adj = adj.to_sparse()
+        idx_train, idx_val, idx_test = (
+            torch.nonzero(train_mask).squeeze(),
+            torch.nonzero(val_mask).squeeze(),
+            torch.nonzero(test_mask).squeeze(),
+        )
         self.is_test = False
         self._epoch = self._best_epoch = 0
         self.train_loader = {
@@ -128,7 +155,7 @@ class IDGL(BaseModel):
         format_str = self.summary()
         print(format_str)
         self.logger.write_to_file(format_str)
-        return self._best_metrics
+        self.best_result = self.test(idx_test, hetero=False)['acc'].item()
 
     def test(self, idx_test, hetero=False):
         self.train_loader.update({"idx_test": idx_test})

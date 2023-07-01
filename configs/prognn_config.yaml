@@ -16,7 +16,7 @@ Default:
   seed: 42
   symmetric: false
   weight_decay: 0.0005
-Cora:
+cora:
   alpha: 0.0005
   beta: 1.5
   cuda: true

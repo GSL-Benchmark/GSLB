@@ -78,7 +78,7 @@ Default:
   # Device
   no_cuda: False
   cuda_id: 0
-Cora:
+cora:
   data_type: 'network'
   pretrained: null
   task_type: 'classification'
@@ -173,7 +173,7 @@ Cora:
   # Device
   no_cuda: False
   cuda_id: 0
-Citeseer:
+citeseer:
   # Data
   data_type: 'network'
   dataset_name: 'citeseer'
@@ -276,7 +276,7 @@ Citeseer:
   no_cuda: False
   cuda_id: 0
 
-Pubmed:
+pubmed:
   data_type: 'network'
   dataset_name: 'pubmed'
   data_dir: '../data/pubmed/'

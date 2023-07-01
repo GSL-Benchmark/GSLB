@@ -10,6 +10,7 @@ import torch.optim as optim
 from torch.optim import Optimizer
 from torch.optim.optimizer import required
 
+from GSL.encoder import GCN
 from GSL.learner import FullParam
 from GSL.model import BaseModel
 from GSL.processor import NonLinearize, Normalize
@@ -111,17 +112,50 @@ class ProGNN(BaseModel):
     Graph Structure Learning for Robust Graph Neural Networks (KDD 2020')
     """
 
-    def __init__(self, model, config, device):
-        super().__init__(device=device)
-        self.device = device
-        self.config = config
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device):
+        super(ProGNN, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
         self.best_val_acc = 0
         self.best_val_loss = 10
         self.best_graph = None
         self.weights = None
-        self.model = model.to(device)
 
-    def fit(self, features, adj, labels, idx_train, idx_val, **kwargs):
+    def fit(self, dataset, split_num=0):
+        adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
+        if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
+            train_mask = dataset.train_masks[split_num % 10]
+            val_mask = dataset.val_masks[split_num % 10]
+            test_mask = dataset.test_masks[split_num % 10]
+        else:
+            train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
+
+        if adj.is_sparse:
+            indices = adj.coalesce().indices()
+            values = adj.coalesce().values()
+            shape = adj.coalesce().shape
+            num_nodes = features.shape[0]
+            loop_edge_index = torch.stack([torch.arange(num_nodes), torch.arange(num_nodes)]).to(adj.device)
+            loop_edge_index = torch.cat([indices, loop_edge_index], dim=1)
+            loop_values = torch.ones(num_nodes).to(adj.device)
+            loop_values = torch.cat([values, loop_values], dim=0)
+            adj = torch.sparse_coo_tensor(indices=loop_edge_index, values=loop_values, size=shape)
+        else:
+            adj += torch.eye(adj.shape[0]).to(self.device)
+            # adj = adj.to_sparse()
+        
+        idx_train, idx_val, idx_test = train_mask.nonzero().view(-1), val_mask.nonzero().view(-1), test_mask.nonzero().view(-1)
+            
+        self.model = GCN(
+            in_channels=features.shape[1],
+            hidden_channels=self.config["hidden"],
+            out_channels=labels.max().item() + 1,
+            num_layers=2,
+            dropout=self.config["dropout"],
+            dropout_adj=0.0,
+            sparse=False,
+            activation_last="log_softmax",
+        )
+        self.model = self.model.to(self.device)
+        
         config = self.config
 
         self.optimizer = optim.Adam(
@@ -170,6 +204,7 @@ class ProGNN(BaseModel):
         print("Optimization Finished!")
         print("Total time elapsed: {:.4f}s".format(time.time() - t_total))
         print(config)
+        self.best_result = self.test(features, labels, idx_test)
 
     def train_gcn(self, epoch, features, adj, labels, idx_train, idx_val):
         config = self.config
