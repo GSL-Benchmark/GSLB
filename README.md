@@ -30,6 +30,19 @@ GSLB needs the following requirements to be satisfied beforehand:
 * Numpy
 * NetworkX
 * ogb
+* tqdm
+* easydict
+* PyYAML
+
+### Installation via PyPI
+
+To install GSLB with [`pip`](https://pip.pypa.io/en/stable/), simply run:
+
+```
+pip install GSLB
+```
+
+Then, you can import `GSL` from your current environment.
 
 ## Usage
 
@@ -121,7 +134,7 @@ model.fit(data)
 
 ## 🧩 Implementation Algorithms
 
-Currently, we have implement the following GSL algorithms:
+Currently, we have implemented the following GSL algorithms:
 
 * GRCN [ECML PKDD 2020], *Graph-Revised Convolutional Network*
 * ProGNN [KDD 2020], *Graph structure learning for robust graph neural networks*
