@@ -762,3 +762,13 @@ def get_knn_graph(features, k, dataset):
         edge_index = np.array([row, col])
         adj = to_undirected(edge_index, num_nodes)
     return adj
+
+
+def feature_mask(features, missing_rate):
+    mask = torch.rand(size=features.size())
+    mask = mask <= missing_rate
+    return mask
+
+
+def apply_feature_mask(features, mask):
+    features[mask] = float(0)

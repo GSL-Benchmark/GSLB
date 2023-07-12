@@ -32,9 +32,9 @@ class Experiment(object):
         self.model_name = model_name
         self.dataset_name = dataset.lower()
         self.model_dict = {
-            'GCN': GCN, 'GAT': GAT, 'SAGE': GraphSAGE, 'GIN': GIN, 'GRCN': GRCN, 'ProGNN': ProGNN,
-            'IDGL': IDGL, 'GEN': GEN, 'CoGSL': CoGSL, 'SLAPS': SLAPS, 'SUBLIME': SUBLIME, 'STABLE': STABLE,
-            'GTN': GTN, 'HGSL': HGSL, 'HGPSL': HGPSL, 'VIBGSL': VIBGSL, 'HESGSL': HESGSL
+            'GRCN': GRCN, 'ProGNN': ProGNN, 'IDGL': IDGL, 'GEN': GEN, 'CoGSL': CoGSL, 
+            'SLAPS': SLAPS, 'SUBLIME': SUBLIME, 'STABLE': STABLE, 'GTN': GTN, 'HGSL': HGSL, 
+            'HGPSL': HGPSL, 'VIBGSL': VIBGSL, 'HESGSL': HESGSL
             # 'nodeformer': NodeFormer,
         }
 
@@ -51,6 +51,9 @@ class Experiment(object):
         # Modify graph structures
         adj = self.data.adj
         features = self.data.features
+
+        # mask = feature_mask(features, 0.8)
+        # apply_feature_mask(features, mask)
 
         # Randomly drop edges
         if drop_rate > 0:
