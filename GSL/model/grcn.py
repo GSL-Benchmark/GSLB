@@ -22,8 +22,8 @@ class GRCN(BaseModel):
         self.conv2 = GCNConv(self.nhid, num_classes)
 
         if self.config.sparse:
-            self.conv_graph = GCNConv_diag(num_features)
-            self.conv_graph2 = GCNConv_diag(num_features)
+            self.conv_graph = GCNConv_diag(num_features, device)
+            self.conv_graph2 = GCNConv_diag(num_features, device)
         else:
             self.conv_graph = GCNConv(num_features, self.graph_nhid)
             self.conv_graph2 = GCNConv(self.graph_nhid, self.graph_nhid2)
