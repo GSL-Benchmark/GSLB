@@ -4,3 +4,5 @@ out/
 .idea/
 test*
 results*
+dist/
+*.egg-info/

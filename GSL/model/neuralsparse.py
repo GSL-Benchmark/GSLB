@@ -5,7 +5,7 @@ from GSL.utils import accuracy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import  scipy.sparse as sp
+import scipy.sparse as sp
 import numpy as np
 from tqdm import tqdm
 
