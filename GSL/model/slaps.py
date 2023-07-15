@@ -4,26 +4,27 @@ from GSL.learner import *
 from GSL.encoder import *
 from GSL.metric import *
 from GSL.processor import *
+from GSL.eval import ClsEvaluator
 import math
 import torch
 import torch.nn as nn
 from copy import deepcopy
 
 class SLAPS(BaseModel):
-    def __init__(self, device, config, nfeats, nclasses, features):
-        super(SLAPS, self).__init__(device)
-        self.config = config
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, features):
+        super(SLAPS, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
+        self.features = features
         self.Adj = None
 
-        self.model1 = GCN_DAE(config=config, nlayers=self.config.nlayers_adj, in_dim=nfeats, hidden_dim=self.config.hidden_adj,
-                         nclasses=nfeats,
+        self.model1 = GCN_DAE(config=self.config, nlayers=self.config.nlayers_adj, in_dim=num_features, hidden_dim=self.config.hidden_adj,
+                         num_classes=num_features,
                          dropout=self.config.dropout1, dropout_adj=self.config.dropout_adj1,
                          features=features.cpu(), k=self.config.k, knn_metric=self.config.knn_metric, i_=self.config.i,
                          non_linearity=self.config.non_linearity, normalization=self.config.normalization,
                          mlp_h=self.config.mlp_h,
                          mlp_epochs=self.config.mlp_epochs, gen_mode=self.config.gen_mode, sparse=self.config.sparse,
                          mlp_act=self.config.mlp_act).to(device)
-        self.model2 = GCN_C(in_channels=nfeats, hidden_channels=self.config.hidden, out_channels=nclasses,
+        self.model2 = GCN_C(in_channels=num_features, hidden_channels=self.config.hidden, out_channels=num_classes,
                        num_layers=self.config.nlayers, dropout=self.config.dropout2,
                        dropout_adj=self.config.dropout_adj2,
                        sparse=self.config.sparse).to(device)
@@ -68,21 +69,22 @@ class SLAPS(BaseModel):
         accu = accuracy(logp[mask], labels[mask])
         return loss, accu
 
-    def fit(self, features, nfeats, labels, nclasses, train_mask, test_mask, val_mask=None):
+    def fit(self, data, split_num=0):
+        features, labels = data.features, data.labels
+        if data.name in ['cornell', 'texas', 'wisconsin', 'actor']:
+            train_mask = data.train_masks[split_num % 10]
+            val_mask = data.val_masks[split_num % 10]
+            test_mask = data.test_masks[split_num % 10]
+        else:
+            train_mask, val_mask, test_mask = data.train_mask, data.val_mask, data.test_mask
         if self.config.half_val_as_train:
             val_mask, train_mask = self.half_val_as_train(val_mask, train_mask)
-
-        test_accu = []
-        validation_accu = []
-        added_edges_list = []
-        removed_edges_list = []
 
         for trial in range(self.config.ntrials):
             optimizer1 = torch.optim.Adam(self.model1.parameters(), lr=self.config.lr_adj, weight_decay=self.config.w_decay_adj)
             optimizer2 = torch.optim.Adam(self.model2.parameters(), lr=self.config.lr, weight_decay=self.config.w_decay)
 
-            best_val_accu = 0.0
-            best_weight = None
+            best_val_result = 0.0
 
             for epoch in range(1, self.config.epochs_adj + 1):
                 self.model1.train()
@@ -107,46 +109,36 @@ class SLAPS(BaseModel):
                     loss2 = torch.tensor(0).to(self.device)
                 else:
                     loss1, Adj = self.get_loss_masked_features(self.model1, features, mask, ogb, self.config.noise, self.config.loss)
-                    loss2, accu = self.get_loss_learnable_adj(self.model2, train_mask, features, labels, Adj)
+                    loss2, train_result = self.get_loss_learnable_adj(self.model2, train_mask, features, labels, Adj)
 
                 loss = loss1 * self.config.lambda_ + loss2
                 loss.backward()
                 optimizer1.step()
                 optimizer2.step()
 
-                if epoch % 100 == 0:
-                    print("Epoch {:05d} | Train Loss {:.4f}, {:.4f}".format(epoch, loss1.item() * self.config.lambda_,
-                                                                            loss2.item()))
-
                 if epoch >= self.config.epochs_adj // self.config.epoch_d and epoch % 1 == 0:
-                    with torch.no_grad():
-                        self.model1.eval()
-                        self.model2.eval()
+                    val_result = self.test(val_mask, features, labels, Adj)
+                    test_result = self.test(test_mask, features, labels, Adj)
+                    if val_result > best_val_result:
+                        best_val_result = val_result
+                        self.best_result = test_result
+                        self.Adj = Adj
+                    print(f'Epoch: {epoch: 02d}, '
+                          f'Loss: {loss:.4f}, '
+                          f'Train: {100 * train_result.item():.2f}%, '
+                          f'Valid: {100 * val_result:.2f}%, '
+                          f'Test: {100 * test_result:.2f}%')
 
-                        val_loss, val_accu = self.get_loss_learnable_adj(self.model2, val_mask, features, labels, Adj)
-                        if val_accu > best_val_accu:
-                            best_weight = deepcopy(self.state_dict())
-                            best_val_accu = val_accu
-                            self.Adj = Adj
-                            print("Val Loss {:.4f}, Val Accuracy {:.4f}".format(val_loss, val_accu))
-                            self.test(test_mask, features, labels)
-
-            validation_accu.append(best_val_accu.item())
-        # TODO: add training function without validation index
-        self.load_state_dict(best_weight)
-
-        # self.print_results(validation_accu, test_accu)
-
-    def test(self, test_mask, features, labels):
+    def test(self, test_mask, features, labels, adj):
         with torch.no_grad():
             self.model1.eval()
             self.model2.eval()
-            test_loss_, test_accu_ = self.get_loss_learnable_adj(self.model2, test_mask, features, labels, self.Adj)
-            print("Test Loss {:.4f}, Test Accuracy {:.4f}".format(test_loss_, test_accu_))
+            test_loss_, test_accu_ = self.get_loss_learnable_adj(self.model2, test_mask, features, labels, adj)
+            return test_accu_.item()
 
 # TODO: move GCN_DAE and GCN_C to GSL/encoder/
 class GCN_DAE(nn.Module):
-    def __init__(self, config, nlayers, in_dim, hidden_dim, nclasses, dropout, dropout_adj, features, k, knn_metric, i_,
+    def __init__(self, config, nlayers, in_dim, hidden_dim, num_classes, dropout, dropout_adj, features, k, knn_metric, i_,
                  non_linearity, normalization, mlp_h, mlp_epochs, gen_mode, sparse, mlp_act):
         super(GCN_DAE, self).__init__()
 
@@ -156,13 +148,13 @@ class GCN_DAE(nn.Module):
             self.layers.append(GCNConv_dgl(in_dim, hidden_dim))
             for _ in range(nlayers - 2):
                 self.layers.append(GCNConv_dgl(hidden_dim, hidden_dim))
-            self.layers.append(GCNConv_dgl(hidden_dim, nclasses))
+            self.layers.append(GCNConv_dgl(hidden_dim, num_classes))
 
         else:
             self.layers.append(GCNConv(in_dim, hidden_dim))
             for i in range(nlayers - 2):
                 self.layers.append(GCNConv(hidden_dim, hidden_dim))
-            self.layers.append(GCNConv(hidden_dim, nclasses))
+            self.layers.append(GCNConv(hidden_dim, num_classes))
 
         self.dropout = dropout
         self.dropout_adj = nn.Dropout(p=dropout_adj)
