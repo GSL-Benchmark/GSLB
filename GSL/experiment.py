@@ -93,8 +93,12 @@ class Experiment(object):
             seed_everything(i)
 
             # Initialize the GSL model
-            model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric, 
-                                                          self.config_path, self.dataset_name, self.device)
+            if self.model_name == 'SLAPS':
+                model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,
+                                                         self.config_path, self.dataset_name, self.device, self.data.features)
+            else:
+                model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,
+                                                         self.config_path, self.dataset_name, self.device)
             self.model = model.to(self.device)
             self.data = self.data.to(self.device)
 
