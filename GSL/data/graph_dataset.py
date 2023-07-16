@@ -9,7 +9,13 @@ from dgl.data import TUDataset
 class GraphDataset:
     def __init__(self, root, name):
         self.root = osp.expanduser(osp.normpath(root))
-        self.name = name.upper()
+        dict_dataset_name = {
+            'imdb-b': 'IMDB-BINARY',
+            'imdb-m': 'IMDB-MULTI',
+            'collab': 'COLLAB',
+            'reddit-b': 'REDDIT-BINARY',
+        }
+        self.name = dict_dataset_name[name]
 
         assert self.name in [
             "IMDB-BINARY", "REDDIT-BINARY", "COLLAB", "IMDB-MULTI",
@@ -20,8 +26,8 @@ class GraphDataset:
         self.dgl_dataset = self.load_data()
         self.graphs, self.labels = zip(*[self.dgl_dataset[i] for i in range(len(self.dgl_dataset))])
         self.labels = torch.tensor(self.labels)
-        self.num_node_features = self.dgl_dataset[0][0].ndata['feat'].shape[1]
-        self.num_classes = self.dgl_dataset.num_labels
+        self.num_feat = self.dgl_dataset[0][0].ndata['feat'].shape[1]
+        self.num_class = self.dgl_dataset.num_labels
 
     def __len__(self):
         return len(self.dgl_dataset)

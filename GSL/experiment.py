@@ -48,27 +48,27 @@ class Experiment(object):
                                    'proteins', 'peptides-func', 'peptides-struct']:
             self.data = GraphDataset(root=data_path, name=self.dataset_name)
 
-        # Modify graph structures
-        adj = self.data.adj
-        features = self.data.features
-
-        # mask = feature_mask(features, 0.8)
-        # apply_feature_mask(features, mask)
-
-        # Randomly drop edges
-        if drop_rate > 0:
-            adj = random_drop_edge(adj, drop_rate)
-        
-        # Randomly add edges
-        if add_rate > 0:
-            adj = random_add_edge(adj, drop_rate)
-
-        # Use knn graph instead of the original structure
-        if use_knn:
-            adj = get_knn_graph(features, k, self.dataset_name)
-
-        # Sparse or notyao
         if isinstance(self.data, Dataset):
+            # Modify graph structures
+            adj = self.data.adj
+            features = self.data.features
+
+            # mask = feature_mask(features, 0.8)
+            # apply_feature_mask(features, mask)
+
+            # Randomly drop edges
+            if drop_rate > 0:
+                adj = random_drop_edge(adj, drop_rate)
+
+            # Randomly add edges
+            if add_rate > 0:
+                adj = random_add_edge(adj, drop_rate)
+
+            # Use knn graph instead of the original structure
+            if use_knn:
+                adj = get_knn_graph(features, k, self.dataset_name)
+
+            # Sparse or notyao
             if not self.sparse:
                 self.data.adj = torch.from_numpy(adj.todense()).to(torch.float)
             else:
@@ -80,7 +80,6 @@ class Experiment(object):
             'macro-f1': macro_f1,
             'micro-f1': micro_f1,
         }[metric]
-
         
     def run(self):
         """
@@ -105,7 +104,10 @@ class Experiment(object):
                 model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,
                                                          self.config_path, self.dataset_name, self.device)
             self.model = model.to(self.device)
-            self.data = self.data.to(self.device)
+            if isinstance(self.data, GraphDataset):
+                self.data = self.data.dgl_dataset
+            else:
+                self.data = self.data.to(self.device)
 
             # Structure Learning
             self.model.fit(self.data)
