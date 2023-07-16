@@ -34,9 +34,8 @@ class HeteroDataset():
     # >>> meta_path_emb = data.meta_path_emb
     """
 
-    def __init__(self, root, name, device, dgl_heterograph=False):
+    def __init__(self, root, name, dgl_heterograph=False):
         self.name = name.lower()
-        self.device = device
 
         assert self.name in ['acm', 'dblp', 'yelp'], \
                 'Currently only support acm, dblp, yelp'
@@ -164,7 +163,7 @@ class HeteroDataset():
             data_dict[etype] = \
                 (torch.from_numpy(ntype_idmap[src_ntype][src_nodes]).type(torch.int64),
                  torch.from_numpy(ntype_idmap[dst_ntype][dst_nodes]).type(torch.int64))
-        g = dgl.heterograph(data_dict).to(self.device)
+        g = dgl.heterograph(data_dict)
 
         # split and label
         def idx2mask(idx, len):
@@ -178,8 +177,8 @@ class HeteroDataset():
             label = np.array(labels[i])[:, 1]
             all_label[node] = label
             g.nodes[target_ntype].data['{}_mask'.format(split)] = \
-                torch.from_numpy(idx2mask(node, g.num_nodes(target_ntype))).type(torch.bool).to(self.device)
-        g.nodes[target_ntype].data['label'] = torch.from_numpy(all_label).type(torch.long).to(self.device)
+                torch.from_numpy(idx2mask(node, g.num_nodes(target_ntype))).type(torch.bool)
+        g.nodes[target_ntype].data['label'] = torch.from_numpy(all_label).type(torch.long)
 
         for ntype in ntypes:
             idx = ntype_mask[ntype].nonzero()[0]
@@ -197,12 +196,12 @@ class HeteroDataset():
             mask[idx] = 1
             return mask
 
-        self.train_mask = torch.BoolTensor(get_mask(self.train_idx.cpu())).to(self.device)
-        self.val_mask = torch.BoolTensor(get_mask(self.val_idx.cpu())).to(self.device)
-        self.test_mask = torch.BoolTensor(get_mask(self.test_idx.cpu())).to(self.device)
+        self.train_mask = torch.BoolTensor(get_mask(self.train_idx.cpu()))
+        self.val_mask = torch.BoolTensor(get_mask(self.val_idx.cpu()))
+        self.test_mask = torch.BoolTensor(get_mask(self.test_idx.cpu()))
 
     def merge_labels(self):
-        labels = torch.zeros(self.train_idx.shape[0] + self.val_idx.shape[0] + self.test_idx.shape[0]).type(torch.LongTensor).to(self.device)
+        labels = torch.zeros(self.train_idx.shape[0] + self.val_idx.shape[0] + self.test_idx.shape[0]).type(torch.LongTensor)
         labels[self.train_idx] = self.train_y
         labels[self.val_idx] = self.val_y
         labels[self.test_idx] = self.test_y
@@ -246,25 +245,25 @@ class HeteroDataset():
 
         self.load_meta_path_emb()
 
-        features = torch.from_numpy(self.features).type(torch.FloatTensor).to(self.device)
+        features = torch.from_numpy(self.features).type(torch.FloatTensor)
         train_idx, train_y, val_idx, val_y, test_idx, test_y = self.get_label()
 
         adj = np.sum(list(self.edges.values())).todense()
-        adj = torch.from_numpy(adj).type(torch.FloatTensor).to(self.device)
+        adj = torch.from_numpy(adj).type(torch.FloatTensor)
         adj = F.normalize(adj, dim=1, p=2)
 
         meta_path_emb = {}
         for mp in self.mp_list[self.name]:
-            meta_path_emb[mp] = torch.from_numpy(self.mp_emb_dict[mp]).type(torch.FloatTensor).to(self.device)
+            meta_path_emb[mp] = torch.from_numpy(self.mp_emb_dict[mp]).type(torch.FloatTensor)
         return features, adj, meta_path_emb, train_idx, train_y, val_idx, val_y, test_idx, test_y
 
     def get_label(self):
-        train_idx = torch.from_numpy(np.array(self.labels[0])[:, 0]).type(torch.LongTensor).to(self.device)
-        train_y = torch.from_numpy(np.array(self.labels[0])[:, 1]).type(torch.LongTensor).to(self.device)
-        val_idx = torch.from_numpy(np.array(self.labels[1])[:, 0]).type(torch.LongTensor).to(self.device)
-        val_y = torch.from_numpy(np.array(self.labels[1])[:, 1]).type(torch.LongTensor).to(self.device)
-        test_idx = torch.from_numpy(np.array(self.labels[2])[:, 0]).type(torch.LongTensor).to(self.device)
-        test_y = torch.from_numpy(np.array(self.labels[2])[:, 1]).type(torch.LongTensor).to(self.device)
+        train_idx = torch.from_numpy(np.array(self.labels[0])[:, 0]).type(torch.LongTensor)
+        train_y = torch.from_numpy(np.array(self.labels[0])[:, 1]).type(torch.LongTensor)
+        val_idx = torch.from_numpy(np.array(self.labels[1])[:, 0]).type(torch.LongTensor)
+        val_y = torch.from_numpy(np.array(self.labels[1])[:, 1]).type(torch.LongTensor)
+        test_idx = torch.from_numpy(np.array(self.labels[2])[:, 0]).type(torch.LongTensor)
+        test_y = torch.from_numpy(np.array(self.labels[2])[:, 1]).type(torch.LongTensor)
         return train_idx, train_y, val_idx, val_y, test_idx, test_y
 
     def load_meta_path_emb(self):
@@ -282,6 +281,25 @@ class HeteroDataset():
         eye = np.identity(labels.max() + 1)
         onehot_mx = eye[labels.cpu()]
         return onehot_mx
+
+    def to(self, device):
+        if hasattr(self, 'g'):
+            self.g = self.g.to(device)
+        self.adj = self.adj.to(device)
+        self.features = self.features.to(device)
+        self.labels = self.labels.to(device)
+        self.train_mask = self.train_mask.to(device)
+        self.val_mask = self.val_mask.to(device)
+        self.test_mask = self.test_mask.to(device)
+        self.train_idx = self.train_idx.to(device)
+        self.val_idx = self.val_idx.to(device)
+        self.test_idx = self.test_idx.to(device)
+        self.train_y = self.train_y.to(device)
+        self.val_y = self.val_y.to(device)
+        self.test_y = self.test_y.to(device)
+        for k in self.meta_path_emb.keys():
+            self.meta_path_emb[k] = self.meta_path_emb[k].to(device)
+        return self
 
     def __repr__(self):
         return '{0}(adj_shape={1}, feature_shape={2})'.format(self.name, self.adj.shape, self.features.shape)

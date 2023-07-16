@@ -11,8 +11,9 @@ import torch.nn as nn
 from copy import deepcopy
 
 class SLAPS(BaseModel):
-    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, features):
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, data):
         super(SLAPS, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
+        features = data.features
         self.features = features
         self.Adj = None
 
