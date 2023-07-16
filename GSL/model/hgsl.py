@@ -10,8 +10,8 @@ import torch.nn as nn
 
 
 class HGSL(BaseModel):
-    def __init__(self, metric, config_path, dataset_name, device, data):
-        super(HGSL, self).__init__(0, 0, metric, config_path, dataset_name, device)
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, data):
+        super(HGSL, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
         metadata = data.metadata
         self.ti, self.ri, self.types, self.ud_rels = metadata['t_info'], metadata['r_info']\
             , metadata['types'], metadata['undirected_relations']
