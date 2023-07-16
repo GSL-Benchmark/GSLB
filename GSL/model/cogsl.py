@@ -10,14 +10,14 @@ from GSL.processor import *
 
 
 class CoGSL(BaseModel):
-    def __init__(self, device, config, data, num_feature, cls_hid_1, num_class, gen_hid, mi_hid_1,
-                 com_lambda_v1, com_lambda_v2, lam, alpha, cls_dropout, ve_dropout, tau, big, batch, name):
-        super(CoGSL, self).__init__(device)
-        self.config = config
-        self.cls = Classification(num_feature, cls_hid_1, num_class, cls_dropout)
-        self.ve = ViewEstimator(data, num_feature, gen_hid, com_lambda_v1, com_lambda_v2, ve_dropout)
-        self.mi = MI_NCE(num_feature, mi_hid_1, tau, big, batch)
-        self.fusion = Fusion(lam, alpha, name)
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, data):
+        super(CoGSL, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
+
+        self.cogsl_data = construct_cogsl_data(data.name, data.adj, data.features, data.labels, data.train_mask, data.val_mask, data.test_mask, self.config.adj_hop).to(device)
+        self.cls = Classification(num_features, self.config.cls_hid_1, num_classes, self.config.cls_dropout)
+        self.ve = ViewEstimator(self.cogsl_data, num_features, self.config.gen_hid, self.config.com_lambda_v1, self.config.com_lambda_v2, self.config.ve_dropout)
+        self.mi = MI_NCE(num_features, self.config.mi_hid_1, self.config.tau, self.config.big, self.config.batch)
+        self.fusion = Fusion(self.config.lam, self.config.alpha, self.config.dataset)
 
     def get_view(self, data):
         new_v1, new_v2 = self.ve(data)
@@ -65,7 +65,7 @@ class CoGSL(BaseModel):
         return self.config.cls_coe * loss_v + (loss_v1 + loss_v2) * (1 - self.config.cls_coe) / 2, views
 
     def fit(self, data):
-        self.data = data
+        self.data = self.cogsl_data
         self.opti_ve = torch.optim.Adam(self.ve.parameters(), lr=self.config.ve_lr,
                                         weight_decay=self.config.ve_weight_decay)
         self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.opti_ve, 0.99)
@@ -79,7 +79,6 @@ class CoGSL(BaseModel):
         self.best_loss_val = 1e9
         self.best_test = 0
         self.best_v = None
-        self.best_v_cls_weight = None
         self.own_str = self.config.dataset
 
         for epoch in range(self.config.main_epoch):
@@ -116,24 +115,23 @@ class CoGSL(BaseModel):
             _, views = self.train_cls()
             logits_v_val = self.get_v_cls_loss(views[0], self.data.x)
             loss_val, acc_val = self.loss_acc(logits_v_val[self.data.val_mask], self.data.y[self.data.val_mask])
+            test_result = self.test(views[0])
             if acc_val >= self.best_acc_val and self.best_loss_val > loss_val:
-                print("better v!")
                 self.best_acc_val = max(acc_val, self.best_acc_val)
                 self.best_loss_val = loss_val
-                self.best_v_cls_weight = deepcopy(self.cls.encoder_v.state_dict())
                 self.best_v = views[0]
-            print("EPOCH ", epoch, "\tCUR_LOSS_VAL ", loss_val.data.cpu().numpy(), "\tCUR_ACC_Val ",
-                  acc_val.data.cpu().numpy(), "\tBEST_ACC_VAL ", self.best_acc_val.data.cpu().numpy())
+                self.best_result = test_result.item()
+            print(f'Epoch: {epoch: 02d}, '
+                  f'Val Loss: {loss_val:.4f}, '
+                  f'Valid: {100 * acc_val:.2f}%, '
+                  f'Test: {100 * test_result:.2f}%')
 
-    def test(self):
+    def test(self, adj):
         with torch.no_grad():
-            self.cls.encoder_v.load_state_dict(self.best_v_cls_weight)
             self.eval()
-
-            probs = self.cls.encoder_v(self.data.x, self.best_v)
+            probs = self.cls.encoder_v(self.data.x, adj)
             accu = accuracy(probs[self.data.test_mask], self.data.y[self.data.test_mask])
-            print("Accuracy: ", accu)
-
+            return accu
 
 
 class CoGSLDataset():
@@ -181,7 +179,7 @@ class CoGSLDataset():
         return mx.to_sparse()
 
 
-def construct_cogsl_data(dataset_name, adj, features, labels, train_mask, val_mask, test_mask, config, adj_hop=1):
+def construct_cogsl_data(dataset_name, adj, features, labels, train_mask, val_mask, test_mask, adj_hop=1):
     print("Constructing {} dataset for CoGSL...".format(dataset_name))
     features = row_normalize_features(features)
 

@@ -96,6 +96,9 @@ class Experiment(object):
             if self.model_name == 'SLAPS':
                 model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,
                                                          self.config_path, self.dataset_name, self.device, self.data.features)
+            if self.model_name == 'CoGSL':
+                model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,
+                                                         self.config_path, self.dataset_name, self.device, self.data)
             else:
                 model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,
                                                          self.config_path, self.dataset_name, self.device)

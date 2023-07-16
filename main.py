@@ -42,4 +42,3 @@ if __name__ == '__main__':
                      use_knn=args.use_knn, k=args.k, drop_rate=args.drop_rate, gpu_num=args.gpu_num,
                      add_rate=args.add_rate, use_mettack=args.use_mettack, ptb_rate=args.ptb_rate)
     exp.run()
-
