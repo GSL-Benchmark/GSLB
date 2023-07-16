@@ -32,7 +32,7 @@ class Experiment(object):
         self.model_name = model_name
         self.dataset_name = dataset.lower()
         self.model_dict = {
-            'GRCN': GRCN, 'ProGNN': ProGNN, 'IDGL': IDGL, 'GEN': GEN, 'CoGSL': CoGSL, 
+            'GCN': GCN_Trainer, 'MLP': MLP_Trainer, 'GRCN': GRCN, 'ProGNN': ProGNN, 'IDGL': IDGL, 'GEN': GEN, 'CoGSL': CoGSL, 
             'SLAPS': SLAPS, 'SUBLIME': SUBLIME, 'STABLE': STABLE, 'GTN': GTN, 'HGSL': HGSL, 
             'HGPSL': HGPSL, 'VIBGSL': VIBGSL, 'HESGSL': HESGSL
             # 'nodeformer': NodeFormer,

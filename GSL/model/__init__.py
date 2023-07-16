@@ -14,6 +14,7 @@ from .hgpsl import HGPSL
 from .gtn import GTN
 from .hgsl import HGSL
 from .hesgsl import HESGSL
+from .baselines import GCN_Trainer, MLP_Trainer
 
 __all__ = [
     'BaseModel',
@@ -31,5 +32,7 @@ __all__ = [
     'HGPSL',
     'GTN',
     'HGSL',
-    'HESGSL'
+    'HESGSL',
+    'GCN_Trainer',
+    'MLP_Trainer'
 ]
