@@ -23,6 +23,18 @@ Default:
   graph_skip_conn: 0.0
   graph_include_self: True
 
-REDDIT-BINARY:
+reddit-b:
+  epochs: 200
+  feature_denoise: False
+
+imdb-b:
+  epochs: 200
+  feature_denoise: False
+
+imdb-m:
+  epochs: 200
+  feature_denoise: False
+
+collab:
   epochs: 200
   feature_denoise: False

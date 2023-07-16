@@ -10,9 +10,9 @@ import torch.nn as nn
 
 
 class HGSL(BaseModel):
-    def __init__(self, device, config, metadata):
-        super(HGSL, self).__init__(device)
-        self.config = config
+    def __init__(self, metric, config_path, dataset_name, device, data):
+        super(HGSL, self).__init__(0, 0, metric, config_path, dataset_name, device)
+        metadata = data.metadata
         self.ti, self.ri, self.types, self.ud_rels = metadata['t_info'], metadata['r_info']\
             , metadata['types'], metadata['undirected_relations']
         feat_dim, mp_emb_dim, n_class = metadata['n_feat'], metadata['n_meta_path_emb'], metadata['n_class']
@@ -22,33 +22,36 @@ class HGSL(BaseModel):
         self.fgg_direct, self.fgg_left, self.fgg_right, self.fg_agg, self.sgg_gen, self.sg_agg, self.overall_g_agg = \
             MD({}), MD({}), MD({}), MD({}), MD({}), MD({}), MD({})
         # Feature encoder
-        self.encoder = MD(dict(zip(metadata['types'], [nn.Linear(feat_dim, config.com_feat_dim)
+        self.encoder = MD(dict(zip(metadata['types'], [nn.Linear(feat_dim, self.config.com_feat_dim)
                                                        for _ in metadata['types']])))
 
         for r in metadata['undirected_relations']:
             # ! Feature Graph Generator
-            self.fgg_direct[r] = KHeadHPLearner(CosineSimilarity(), [ThresholdSparsify(config.fgd_th)], config.com_feat_dim, config.num_head)
-            self.fgg_left[r] = KHeadHPLearner(CosineSimilarity(), [ThresholdSparsify(config.fgh_th)], feat_dim, config.num_head)
-            self.fgg_right[r] = KHeadHPLearner(CosineSimilarity(), [ThresholdSparsify(config.fgh_th)], feat_dim, config.num_head)
+            self.fgg_direct[r] = KHeadHPLearner(CosineSimilarity(), [ThresholdSparsify(self.config.fgd_th)], self.config.com_feat_dim, self.config.num_head)
+            self.fgg_left[r] = KHeadHPLearner(CosineSimilarity(), [ThresholdSparsify(self.config.fgh_th)], feat_dim, self.config.num_head)
+            self.fgg_right[r] = KHeadHPLearner(CosineSimilarity(), [ThresholdSparsify(self.config.fgh_th)], feat_dim, self.config.num_head)
             self.fg_agg[r] = GraphChannelAttLayer(3)  # 3 = 1 (first-order/direct) + 2 (second-order)
 
             # ! Semantic Graph Generator
             self.sgg_gen[r] = MD(dict(
-                zip(config.mp_list, [KHeadHPLearner(CosineSimilarity(), [ThresholdSparsify(config.sem_th)], mp_emb_dim, config.num_head) for _ in config.mp_list])))
-            self.sg_agg[r] = GraphChannelAttLayer(len(config.mp_list))
+                zip(self.config.mp_list, [KHeadHPLearner(CosineSimilarity(), [ThresholdSparsify(self.config.sem_th)], mp_emb_dim, self.config.num_head) for _ in self.config.mp_list])))
+            self.sg_agg[r] = GraphChannelAttLayer(len(self.config.mp_list))
 
             # ! Overall Graph Generator
             self.overall_g_agg[r] = GraphChannelAttLayer(3, [1, 1, 10])  # 3 = feat-graph + sem-graph + ori_graph
 
         # ! Graph Convolution
-        if config.conv_method == 'gcn':
-            self.GCN = GCN(in_channels=feat_dim, hidden_channels=config.emb_dim, out_channels=n_class, num_layers=2,
-                           dropout=config.dropout, dropout_adj=0., sparse=False, activation_last='log_softmax',
+        if self.config.conv_method == 'gcn':
+            self.GCN = GCN(in_channels=feat_dim, hidden_channels=self.config.emb_dim, out_channels=n_class, num_layers=2,
+                           dropout=self.config.dropout, dropout_adj=0., sparse=False, activation_last='log_softmax',
                            conv_bias=True)
-        self.norm_order = config.adj_norm_order
+        self.norm_order = self.config.adj_norm_order
         self.stopper = None
 
-    def fit(self, adj, features, labels, train_idx, val_idx, test_idx, meta_path_emb):
+    def fit(self, data):
+        adj, features, labels = data.adj, data.features, data.labels
+        train_idx, val_idx, test_idx = data.train_idx, data.val_idx, data.test_idx
+        meta_path_emb = data.meta_path_emb
         optimizer = torch.optim.Adam(
             self.parameters(), lr=self.config.lr, weight_decay=float(self.config.weight_decay))
         self.stopper = EarlyStopping(patience=self.config.early_stop)
@@ -86,32 +89,28 @@ class HGSL(BaseModel):
 
         if self.config.early_stop > 0:
             self.load_state_dict(self.stopper.best_weight)
+        self.test(adj, features, labels, val_idx, test_idx, meta_path_emb)
 
-    def test(self, adj, features, labels, train_idx, val_idx, test_idx, meta_path_emb):
+    def test(self, adj, features, labels, val_idx, test_idx, meta_path_emb):
         with torch.no_grad():
             logits, _ = self.forward(features, adj, meta_path_emb)
-            self.eval_and_save(logits, test_idx, labels[test_idx], val_idx, labels[val_idx])
+            test_f1, test_mif1 = self.eval_logits(logits, test_idx, labels[test_idx])
+            val_f1, val_mif1 = self.eval_logits(logits, val_idx, labels[val_idx])
+            res = {}
+            if self.stopper != None:
+                res.update({'test_f1': f'{test_f1:.4f}', 'test_mif1': f'{test_mif1:.4f}',
+                            'val_f1': f'{val_f1:.4f}', 'val_mif1': f'{val_mif1:.4f}',
+                            'best_epoch': self.stopper.best_epoch})
+            else:
+                res.update({'test_f1': f'{test_f1:.4f}', 'test_mif1': f'{test_mif1:.4f}',
+                            'val_f1': f'{val_f1:.4f}', 'val_mif1': f'{val_mif1:.4f}'})
+            res_dict = {'res': res}
+            print(f'results:{res_dict}')
+            self.best_result = test_f1.item()
 
     def eval_logits(self, logits, target_x, target_y):
         pred_y = torch.argmax(logits[target_x], dim=1)
-        return torch_f1_score(pred_y, target_y, n_class=logits.shape[1])
-
-    def eval_and_save(self, logits, test_x, test_y, val_x, val_y, res={}):
-        test_f1, test_mif1 = self.eval_logits(logits, test_x, test_y)
-        val_f1, val_mif1 = self.eval_logits(logits, val_x, val_y)
-        self.save_results(test_f1, val_f1, test_mif1, val_mif1, res)
-
-    def save_results(self, test_f1, val_f1, test_mif1=0, val_mif1=0, res={}):
-        if self.stopper != None:
-            res.update({'test_f1': f'{test_f1:.4f}', 'test_mif1': f'{test_mif1:.4f}',
-                        'val_f1': f'{val_f1:.4f}', 'val_mif1': f'{val_mif1:.4f}',
-                        'best_epoch': self.stopper.best_epoch})
-        else:
-            res.update({'test_f1': f'{test_f1:.4f}', 'test_mif1': f'{test_mif1:.4f}',
-                        'val_f1': f'{val_f1:.4f}', 'val_mif1': f'{val_mif1:.4f}'})
-        # print(f"Seed{self.config.seed}")
-        res_dict = {'res': res}
-        print(f'\n\n\nTrain finished, results:{res_dict}')
+        return macro_f1(pred_y, target_y, n_class=logits.shape[1]), micro_f1(pred_y, target_y, n_class=logits.shape[1])
 
     def forward(self, features, adj_ori, mp_emb):
         def get_rel_mat(mat, r):

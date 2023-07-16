@@ -23,38 +23,46 @@ VERY_SMALL_NUMBER = 1e-12
 
 
 class VIBGSL(BaseModel):
-    def __init__(self, device, args, num_node_features, num_classes):
-        super(VIBGSL, self).__init__(device)
-        self.args = args
-        self.num_node_features = num_node_features
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device):
+        super(VIBGSL, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
+
+        if dataset_name == 'reddit-b':
+            if self.config.backbone == "GAT":
+                self.config.batch_size = 30
+                self.config.test_batch_size = 10
+            else:
+                self.config.batch_size = 80
+                self.config.test_batch_size = 60
+
+        self.num_features = num_features
         self.num_classes = num_classes
-        self.backbone = args.backbone
-        self.hidden_dim = args.hidden_dim
-        self.IB_size = args.IB_size
-        self.graph_metric_type = args.graph_metric_type
-        self.graph_type = args.graph_type
-        self.top_k = args.top_k
-        self.epsilon = args.epsilon
-        self.beta = args.beta
-        self.num_per = args.num_per
+        self.backbone = self.config.backbone
+        self.hidden_dim = self.config.hidden_dim
+        self.IB_size = self.config.IB_size
+        self.graph_metric_type = self.config.graph_metric_type
+        self.graph_type = self.config.graph_type
+        self.top_k = self.config.top_k
+        self.epsilon = self.config.epsilon
+        self.beta = self.config.beta
+        self.num_per = self.config.num_per
 
         if self.backbone == "GCN":
-            self.backbone_gnn = GCN_dgl(in_channels=self.num_node_features, hidden_channels=self.hidden_dim,
+            self.backbone_gnn = GCN_dgl(in_channels=self.num_features, hidden_channels=self.hidden_dim,
                                         out_channels=self.IB_size * 2, num_layers=2, dropout=0., dropout_adj=0.)
         elif self.backbone == "GIN":
-            self.backbone_gnn = GIN(input_dim=self.num_node_features, hidden_dim=self.hidden_dim,
+            self.backbone_gnn = GIN(input_dim=self.num_features, hidden_dim=self.hidden_dim,
                                     output_dim=self.IB_size*2, num_layers=2)
         elif self.backbone == "GAT":
-            self.backbone_gnn = GAT_dgl(nfeat=self.num_node_features, nhid=self.hidden_dim, nclass=self.IB_size * 2,
+            self.backbone_gnn = GAT_dgl(nfeat=self.num_features, nhid=self.hidden_dim, nclass=self.IB_size * 2,
                                         dropout=0.5, alpha=0.2, nheads=4)
 
         self.pool = AvgPooling()
 
         metric = InnerProductSimilarity()
         processors = [ProbabilitySparsify(temperature=0.05)]
-        if self.args.graph_include_self:
+        if self.config.graph_include_self:
             processors.append(AddEye())
-        self.graph_learner = MLPLearner(metric, processors, nlayers=2, in_dim=self.num_node_features,
+        self.graph_learner = MLPLearner(metric, processors, nlayers=2, in_dim=self.num_features,
                                         hidden_dim=self.hidden_dim, activation=torch.relu, sparse=False)
 
         self.classifier = torch.nn.Sequential(Linear(self.IB_size, self.IB_size), ReLU(), Dropout(p=0.5),
@@ -122,10 +130,13 @@ class VIBGSL(BaseModel):
 
         return (mu, std), logits, graphs_list, new_graphs_list
 
-    def fit(self, dataset, folds, epochs, batch_size, test_batch_size, lr,
-                                  lr_decay_factor, lr_decay_step_size, weight_decay, logger=None):
+    def fit(self, dataset, logger=None):
+        folds, epochs, batch_size, test_batch_size, lr, lr_decay_factor, lr_decay_step_size, weight_decay \
+            = self.config.folds, self.config.epochs, self.config.batch_size, self.config.test_batch_size, \
+            self.config.lr, self.config.lr_decay_factor, self.config.lr_decay_step_size, self.config.weight_decay
+
         val_losses, val_accs, test_accs, durations = [], [], [], []
-        for fold, (train_idx, test_idx, val_idx) in enumerate(zip(*k_fold(dataset, folds, self.args.seed))):
+        for fold, (train_idx, test_idx, val_idx) in enumerate(zip(*k_fold(dataset, folds, self.config.seed))):
 
             fold_val_losses = []
             fold_val_accs = []
@@ -209,7 +220,8 @@ class VIBGSL(BaseModel):
         print('Val Loss: {:.4f}, Test Accuracy: {:.3f}+{:.3f}, Duration: {:.3f}'
               .format(val_loss_mean, test_acc_mean, test_acc_std, duration_mean))
 
-        return test_acc, test_acc_mean, test_acc_std
+        # return test_acc, test_acc_mean, test_acc_std
+        self.best_result = test_acc_mean
 
 
 def k_fold(dataset, folds, seed):

@@ -1,7 +1,8 @@
 Default:
-  seed: 3
+  seed: 0
+  adj_hop: 1
 
-Cora:
+cora:
   big: False
   dataset: cora
   batch: 0
@@ -40,7 +41,7 @@ Cora:
   ratio: 0.0
   flag: 1
 
-Citeseer:
+citeseer:
   big: False
   dataset: citeseer
   batch: 0
@@ -79,7 +80,7 @@ Citeseer:
   ratio: 0.0
   flag: 1
 
-Pubmed:
+pubmed:
   big: False
   dataset: pubmed
   batch: 0
