@@ -86,19 +86,15 @@ class Experiment(object):
         Run the experiment
         """
         test_results = []
-        if not isinstance(self.data, HeteroDataset):
-            num_feat, num_class = self.data.num_feat, self.data.num_class
+        num_feat, num_class = self.data.num_feat, self.data.num_class
 
         for i in range(self.ntrail):
 
             seed_everything(i)
 
             # Initialize the GSL model
-            if self.model_name in ['SLAPS', 'CoGSL']:
+            if self.model_name in ['SLAPS', 'CoGSL', 'HGSL']:
                 model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,
-                                                         self.config_path, self.dataset_name, self.device, self.data)
-            elif self.model_name in ['HGSL']:
-                model = self.model_dict[self.model_name](self.eval_metric,
                                                          self.config_path, self.dataset_name, self.device, self.data)
             else:
                 model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,

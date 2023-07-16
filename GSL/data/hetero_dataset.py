@@ -74,6 +74,9 @@ class HeteroDataset():
             self.merge_labels()
             self.idx2mask()
 
+        self.num_feat = 0
+        self.num_class = 0
+
     def construct_dgl_graph(self):
         # transform graph into dgl.heterograph
         if self.name == 'dblp':
