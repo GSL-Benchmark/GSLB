@@ -1,11 +1,19 @@
-from GSL.model import *
-from GSL.encoder import *
-from GSL.data import *
-from GSL.utils import (random_drop_edge, random_add_edge, get_knn_graph, accuracy, macro_f1,
-                       micro_f1, seed_everything, sparse_mx_to_torch_sparse_tensor)
+import os
+import pickle
+from contextlib import redirect_stdout
 
-import torch
 import numpy as np
+import torch
+import yaml
+from easydict import EasyDict as edict
+from hyperopt import Trials, fmin, hp, tpe
+
+from GSL.data import *
+from GSL.encoder import *
+from GSL.model import *
+from GSL.utils import (accuracy, get_knn_graph, macro_f1, micro_f1,
+                       random_add_edge, random_drop_edge, seed_everything,
+                       sparse_mx_to_torch_sparse_tensor)
 
 
 class Experiment(object):
@@ -81,7 +89,7 @@ class Experiment(object):
             'micro-f1': micro_f1,
         }[metric]
         
-    def run(self):
+    def run(self, params=None):
         """
         Run the experiment
         """
@@ -95,10 +103,10 @@ class Experiment(object):
             # Initialize the GSL model
             if self.model_name in ['SLAPS', 'CoGSL', 'HGSL']:
                 model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,
-                                                         self.config_path, self.dataset_name, self.device, self.data)
+                                                         self.config_path, self.dataset_name, self.device, self.data) # TODO modify the config according to the search space
             else:
                 model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,
-                                                         self.config_path, self.dataset_name, self.device)
+                                                         self.config_path, self.dataset_name, self.device, params)
             self.model = model.to(self.device)
             if isinstance(self.data, GraphDataset):
                 self.data = self.data.dgl_dataset
@@ -122,3 +130,31 @@ class Experiment(object):
                    format(self.model_name, self.dataset_name, self.metric,
                           test_results, np.mean(test_results), np.std(test_results))
         print(exp_info)
+        return np.mean(test_results)
+    
+    def objective(self, params):
+        with redirect_stdout(open(os.devnull, "w")):
+            return {'loss': -self.run(params), 'status': 'ok'}
+
+    def hp_search(self, hyperspace_path):
+        with open(hyperspace_path, "r") as fin:
+            raw_text = fin.read()
+            raw_space = edict(yaml.safe_load(raw_text))
+        
+        space_hyperopt = {} 
+        for key, config in raw_space.items():
+            if config.type == 'choice':
+                space_hyperopt[key] = hp.choice(key, config.values)
+            
+            elif config.type == 'uniform':
+                space_hyperopt[key] = hp.uniform(key, config.bounds[0], config.bounds[1])
+            
+            # 可以扩展其他类型  
+        print(space_hyperopt)
+        trials = Trials()
+        best = fmin(self.objective, space_hyperopt, algo=tpe.suggest, max_evals=100, trials=trials)
+        print(trials.best_trial)
+        
+        with open('trails.pkl', 'wb') as f:
+            pickle.dump(trials, f)
+        

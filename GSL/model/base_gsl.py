@@ -10,13 +10,13 @@ class BaseModel(nn.Module):
     '''
     Abstract base class for graph structure learning models.
     '''
-    def __init__(self, num_feat, num_class, metric, config_path, dataset, device):
+    def __init__(self, num_feat, num_class, metric, config_path, dataset, device, params=None):
         super(BaseModel, self).__init__()
         self.num_feat = num_feat
         self.num_class = num_class
         self.metric = metric
         self.device = device
-        self.load_config(config_path, dataset)
+        self.load_config(config_path, dataset, params)
 
     def check_adj(self, adj):
         """
@@ -26,7 +26,7 @@ class BaseModel(nn.Module):
         assert adj.tocsr().max() == 1, "Max value should be 1!"
         assert adj.tocsr().min() == 0, "Min value should be 0!"
 
-    def load_config(self, config_path, dataset):
+    def load_config(self, config_path, dataset, params):
         """
         Load the hyper-parameters required for the models.
         """
@@ -40,4 +40,10 @@ class BaseModel(nn.Module):
         if dataset_config is not None:
             config.update(dataset_config)
         self.config = config
-    
+        self.load_hypers(params)
+
+    def load_hypers(self, params):
+        if params is None:
+            return
+        for key, value in params.items():
+            self.config[key] = value

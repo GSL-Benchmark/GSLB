@@ -1,0 +1,7 @@
+learning_rate:
+  type: choice 
+  values: [1.e-4, 1.e-3, 1.e-2]
+
+graph_skip_conn:
+  type: uniform
+  bounds: [0.5, 0.9]

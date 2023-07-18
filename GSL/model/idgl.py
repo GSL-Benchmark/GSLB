@@ -41,10 +41,10 @@ class IDGL(BaseModel):
     """
 
     def __init__(
-        self, num_features, num_classes, metric, config_path, dataset_name, device
+        self, num_features, num_classes, metric, config_path, dataset_name, device, params
     ):
         super(IDGL, self).__init__(
-            num_features, num_classes, metric, config_path, dataset_name, device
+            num_features, num_classes, metric, config_path, dataset_name, device, params
         )
         self.config.update({"num_feat": num_features, "num_class": num_classes})
         self.model = GraphClf(self.config, device).to(device)
