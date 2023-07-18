@@ -1,6 +1,6 @@
 from GSL.model import BaseModel
 from GSL.encoder import GCN
-from GSL.utils import row_normalize
+# from GSL.utils import row_normalize
 
 import torch
 import torch.nn.functional as F

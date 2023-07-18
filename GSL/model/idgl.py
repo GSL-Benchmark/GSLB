@@ -2,6 +2,7 @@ import gc
 import os
 
 import numpy as np
+import scipy.sparse as sp
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -13,10 +14,25 @@ from GSL.metric import *
 from GSL.model import BaseModel
 from GSL.processor import Normalize, ThresholdSparsify
 from GSL.utils import (AverageMeter, DummyLogger, SquaredFrobeniusNorm,
-                       accuracy, diff)
+                       accuracy, diff, row_normalize_features, to_scipy)
 
 VERY_SMALL_NUMBER = 1e-12
 _SAVED_WEIGHTS_FILE = "params.saved"
+
+
+def normalize_adj(mx):
+    """Normalize sparse adjacency matrix"""
+    if type(mx) is not sp.lil.lil_matrix:
+        mx = mx.tolil()
+    if mx[0, 0] == 0:
+        mx = mx + sp.eye(mx.shape[0])
+    rowsum = np.array(mx.sum(1))
+    r_inv = np.power(rowsum, -1 / 2).flatten()
+    r_inv[np.isinf(r_inv)] = 0.0
+    r_mat_inv = sp.diags(r_inv)
+    mx = r_mat_inv.dot(mx)
+    mx = mx.dot(r_mat_inv)
+    return mx
 
 
 class IDGL(BaseModel):
@@ -24,8 +40,12 @@ class IDGL(BaseModel):
     Iterative Deep Graph Learning for Graph Neural Networks: Better and Robust Node Embeddings (NeurIPS 2020')
     """
 
-    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device):
-        super(IDGL, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
+    def __init__(
+        self, num_features, num_classes, metric, config_path, dataset_name, device
+    ):
+        super(IDGL, self).__init__(
+            num_features, num_classes, metric, config_path, dataset_name, device
+        )
         self.config.update({"num_feat": num_features, "num_class": num_classes})
         self.model = GraphClf(self.config, device).to(device)
         self.config = self.config
@@ -37,11 +57,8 @@ class IDGL(BaseModel):
         self.score_func = accuracy
         self.metric_name = "acc"
         self._init_optimizer()
-        self.logger = DummyLogger(
-            self.config, dirname=self.config["out_dir"], pretrained=self.config["pretrained"]
-        )
         self.net_module = GraphClf
-        self.dirname = self.logger.dirname
+        # self.dirname = self.logger.dirname
         seed = self.config.get("seed", 42)
         np.random.seed(seed)
         torch.manual_seed(seed)
@@ -50,25 +67,36 @@ class IDGL(BaseModel):
         self.is_test = False
 
     def fit(self, dataset, split_num=0):
-        adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
-        if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
+        adj, features, labels = (
+            dataset.adj.clone(),
+            dataset.features.clone(),
+            dataset.labels,
+        )
+        if dataset.name in ["cornell", "texas", "wisconsin", "actor"]:
             train_mask = dataset.train_masks[split_num % 10]
             val_mask = dataset.val_masks[split_num % 10]
             test_mask = dataset.test_masks[split_num % 10]
         else:
-            train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
-        
+            train_mask, val_mask, test_mask = (
+                dataset.train_mask,
+                dataset.val_mask,
+                dataset.test_mask,
+            )
 
         if adj.is_sparse:
             indices = adj.coalesce().indices()
             values = adj.coalesce().values()
             shape = adj.coalesce().shape
             num_nodes = features.shape[0]
-            loop_edge_index = torch.stack([torch.arange(num_nodes), torch.arange(num_nodes)]).to(adj.device)
+            loop_edge_index = torch.stack(
+                [torch.arange(num_nodes), torch.arange(num_nodes)]
+            ).to(adj.device)
             loop_edge_index = torch.cat([indices, loop_edge_index], dim=1)
             loop_values = torch.ones(num_nodes).to(adj.device)
             loop_values = torch.cat([values, loop_values], dim=0)
-            adj = torch.sparse_coo_tensor(indices=loop_edge_index, values=loop_values, size=shape)
+            adj = torch.sparse_coo_tensor(
+                indices=loop_edge_index, values=loop_values, size=shape
+            )
         else:
             adj += torch.eye(adj.shape[0]).to(self.device)
             adj = adj.to_sparse()
@@ -77,6 +105,10 @@ class IDGL(BaseModel):
             torch.nonzero(val_mask).squeeze(),
             torch.nonzero(test_mask).squeeze(),
         )
+        adj = to_scipy(adj)
+        features = row_normalize_features(features)
+        adj = normalize_adj(adj)
+        adj = torch.from_numpy(adj.todense()).to(torch.float)
         self.is_test = False
         self._epoch = self._best_epoch = 0
         self.train_loader = {
@@ -94,77 +126,43 @@ class IDGL(BaseModel):
 
         while self._stop_condition(self._epoch, self.config["patience"]):
             self._epoch += 1
-
-            # Train phase
-            if self._epoch % self.config["print_every_epochs"] == 0:
-                format_str = "\n>>> Train Epoch: [{} / {}]".format(
-                    self._epoch, self.config["max_epochs"]
-                )
-                print(format_str)
-                self.logger.write_to_file(format_str)
-
             self.run_epoch(
                 self.train_loader,
                 training=True,
             )
-            if self._epoch % self.config["print_every_epochs"] == 0:
-                format_str = "Training Epoch {} -- Loss: {:0.5f}".format(
-                    self._epoch, self._train_loss.mean()
-                )
-                format_str += self.metric_to_str(self._train_metrics)
-                print(format_str)
-                format_str = "\n>>> Validation Epoch: [{} / {}]".format(
-                    self._epoch, self.config["max_epochs"]
-                )
-                print(format_str)
-                self.logger.write_to_file(format_str)
-
-            # Validation phase
             dev_output, dev_gold = self.run_epoch(
                 self.dev_loader,
                 training=False,
             )
-
-            if self._epoch % self.config["print_every_epochs"] == 0:
-                format_str = "Validation Epoch {} -- Loss: {:0.5f}".format(
-                    self._epoch, self._dev_loss.mean()
-                )
-                format_str += self.metric_to_str(self._dev_metrics)
-                print(format_str)
             cur_dev_score = self._dev_metrics[self.config["eary_stop_metric"]].mean()
+
+            print(
+                f"Epoch: {self._epoch: 02d}, "
+                f"Loss: {self._train_loss.mean():.4f}, "
+                f"Train: {100 * self._train_metrics['acc'].mean():.2f}%, "
+                f"Valid: {100 * self._dev_metrics['acc'].mean():.2f}%, "
+            )
 
             if self._best_metrics[self.config["eary_stop_metric"]] < cur_dev_score:
                 self._best_epoch = self._epoch
                 for k in self._dev_metrics:
                     self._best_metrics[k] = self._dev_metrics[k].mean()
-                if self.config["save_params"]:
-                    self.save(self.dirname)
-                    if self._epoch % self.config["print_every_epochs"] == 0:
-                        format_str = "Saved model to {}".format(self.dirname)
-                        self.logger.write_to_file(format_str)
-                        print(format_str)
-
-                if self._epoch % self.config["print_every_epochs"] == 0:
-                    format_str = "!!! Updated: " + self.best_metric_to_str(
-                        self._best_metrics
-                    )
-                    self.logger.write_to_file(format_str)
-                    print(format_str)
+                self.best_model = self.model
 
             self._reset_metrics()
-        format_str = self.summary()
-        print(format_str)
-        self.logger.write_to_file(format_str)
-        self.best_result = self.test(idx_test, hetero=False)['acc'].item()
+        # format_str = self.summary()
+        # print(format_str)
+        # self.logger.write_to_file(format_str)
+        self.best_result = self.test(idx_test, hetero=False)["acc"].item()
 
     def test(self, idx_test, hetero=False):
         self.train_loader.update({"idx_test": idx_test})
         self._n_test_examples = idx_test.shape[0]
         self.test_loader = self.train_loader
-        print("Restoring best model")
-        self.init_saved_network(self.dirname)
-        self.model = self.model.to(self.device)
-
+        # print("Restoring best model")
+        # self.init_saved_network(self.dirname)
+        # self.model = self.model.to(self.device)
+        self.model = self.best_model
         self.is_test = True
         self._reset_metrics()
         for param in self.model.parameters():
@@ -180,24 +178,27 @@ class IDGL(BaseModel):
             self._n_test_examples, 1, 1
         )
         format_str += self.metric_to_str(metrics)
-        if hetero: 
-            pred = torch.argmax(output, dim=1)
-            ma_f1, mi_f1 = torch_f1_score(pred, gold, self.config.num_class)
-            format_str += f"\nFinal score on the testing set: {ma_f1:0.5f} {mi_f1:0.5f}\n"
+        if hetero:
+            # pred = torch.argmax(output, dim=1)
+            # ma_f1, mi_f1 = torch_f1_score(pred, gold, self.config.num_class)
+            # format_str += (
+            #     f"\nFinal score on the testing set: {ma_f1:0.5f} {mi_f1:0.5f}\n"
+            # )
+            pass
         else:
             test_score = self.score_func(output, gold)
             format_str += "\nFinal score on the testing set: {:0.5f}\n".format(
                 test_score
             )
-        print(format_str)
-        self.logger.write_to_file(format_str)
-        self.logger.close()
+        # print(format_str)
+        # self.logger.write_to_file(format_str)
+        # self.logger.close()
 
         test_metrics = {}
         for k in metrics:
             test_metrics[k] = metrics[k].mean()
-        if hetero: 
-            return ma_f1, mi_f1
+        # if hetero:
+            # return ma_f1, mi_f1
         if test_score is not None:
             test_metrics[self.metric_name] = test_score
         return test_metrics
@@ -255,9 +256,7 @@ class IDGL(BaseModel):
         # Add mid GNN layers
         for encoder in network.encoder.layers[1:-1]:
             node_vec = torch.relu(encoder(node_vec, cur_adj))
-            node_vec = F.dropout(
-                node_vec, network.dropout, training=network.training
-            )
+            node_vec = F.dropout(node_vec, network.dropout, training=network.training)
 
         # BP to update weights
         output = network.encoder.layers[-1](node_vec, cur_adj)
@@ -349,12 +348,12 @@ class IDGL(BaseModel):
                     cur_raw_adj - pre_raw_adj
                 ) * self.config.get("graph_learn_ratio")
 
-        if mode == "test" and self.config.get("out_raw_learned_adj_path", None):
-            out_raw_learned_adj_path = os.path.join(
-                self.dirname, self.config["out_raw_learned_adj_path"]
-            )
-            np.save(out_raw_learned_adj_path, cur_raw_adj.cpu())
-            print("Saved raw_learned_adj to {}".format(out_raw_learned_adj_path))
+        # if mode == "test" and self.config.get("out_raw_learned_adj_path", None):
+        #     out_raw_learned_adj_path = os.path.join(
+        #         self.dirname, self.config["out_raw_learned_adj_path"]
+        #     )
+        #     np.save(out_raw_learned_adj_path, cur_raw_adj.cpu())
+        #     print("Saved raw_learned_adj to {}".format(out_raw_learned_adj_path))
 
         if iter_ > 0:
             loss = loss / iter_ + loss1
@@ -611,7 +610,7 @@ class GraphClf(nn.Module):
             if graph_include_self:
                 adj = adj + torch.eye(adj.size(0), device=self.device)
         else:
-            adj = (1 - graph_skip_conn) * adj + graph_skip_conn * init_adj 
+            adj = (1 - graph_skip_conn) * adj + graph_skip_conn * init_adj
 
         return raw_adj, adj
 
