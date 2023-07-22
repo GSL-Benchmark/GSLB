@@ -1,28 +1,33 @@
+import datetime
 import json
 import os
+import pickle
+import random
 import shutil
+import time
 from copy import deepcopy
 
 import dgl
 import easydict
-import numpy as np
-import scipy.sparse as sp
 import networkx as nx
+import numpy as np
+import pandas as pd
+import pytz
+import scipy.sparse as sp
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import yaml
-import random
 from dgl.data import DGLDataset
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import f1_score
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedKFold, train_test_split
 
 from GSL.metric import CosineSimilarity
 from GSL.processor import KNearestNeighbour
 
 EOS = 1e-10
 VERY_SMALL_NUMBER = 1e-12
+
 
 def load_config(cfg_file):
     with open(cfg_file, "r") as fin:
@@ -104,22 +109,26 @@ def accuracy(output, labels):
     correct = correct.sum()
     return correct / len(labels)
 
+
 def auc_f1_mima(logits, label):
     preds = torch.argmax(logits, dim=1)
-    test_f1_macro = f1_score(label.cpu(), preds.cpu(), average='macro')
-    test_f1_micro = f1_score(label.cpu(), preds.cpu(), average='micro')
+    test_f1_macro = f1_score(label.cpu(), preds.cpu(), average="macro")
+    test_f1_micro = f1_score(label.cpu(), preds.cpu(), average="micro")
 
     best_proba = F.softmax(logits, dim=1)
     if logits.shape[1] != 2:
-        auc = roc_auc_score(y_true=label.detach().cpu().numpy(),
-                            y_score=best_proba.detach().cpu().numpy(),
-                            multi_class='ovr'
-                            )
+        auc = roc_auc_score(
+            y_true=label.detach().cpu().numpy(),
+            y_score=best_proba.detach().cpu().numpy(),
+            multi_class="ovr",
+        )
     else:
-        auc = roc_auc_score(y_true=label.detach().cpu().numpy(),
-                            y_score=best_proba[:, 1].detach().cpu().numpy()
-                            )
+        auc = roc_auc_score(
+            y_true=label.detach().cpu().numpy(),
+            y_score=best_proba[:, 1].detach().cpu().numpy(),
+        )
     return test_f1_macro, test_f1_micro, auc
+
 
 def split_batch(init_list, batch_size):
     groups = zip(*(iter(init_list),) * batch_size)
@@ -347,42 +356,6 @@ class AverageMeter(object):
         return self.sum / self.count
 
 
-class DummyLogger(object):
-    def __init__(self, config, dirname=None, pretrained=None):
-        self.config = config
-        if dirname is None:
-            if pretrained is None:
-                raise Exception("Either --dir or --pretrained needs to be specified.")
-            self.dirname = pretrained
-        else:
-            self.dirname = dirname
-            if os.path.exists(dirname):
-                shutil.rmtree(dirname)
-            os.makedirs(dirname)
-            os.mkdir(os.path.join(dirname, "metrics"))
-            self.log_json(config, os.path.join(self.dirname, "config.json"))
-        if config["logging"]:
-            self.f_metric = open(
-                os.path.join(self.dirname, "metrics", "metrics.log"), "a"
-            )
-
-    def log_json(self, data, filename, mode="w"):
-        with open(filename, mode) as outfile:
-            outfile.write(json.dumps(data, indent=4, ensure_ascii=False))
-
-    def log(self, data, filename):
-        print(data)
-
-    def write_to_file(self, text):
-        if self.config["logging"]:
-            self.f_metric.writelines(text + "\n")
-            self.f_metric.flush()
-
-    def close(self):
-        if self.config["logging"]:
-            self.f_metric.close()
-
-
 def to_scipy(tensor):
     """Convert a dense/sparse tensor to scipy matrix"""
     if is_sparse_tensor(tensor):
@@ -493,37 +466,37 @@ class EarlyStopping:
             self.counter = 0
 
         return self.early_stop
-    
+
 
 def true_positive(pred, target, n_class):
-    return torch.tensor(
-        [((pred == i) & (target == i)).sum() for i in range(n_class)]
-    )
+    return torch.tensor([((pred == i) & (target == i)).sum() for i in range(n_class)])
+
 
 def false_positive(pred, target, n_class):
-    return torch.tensor(
-        [((pred == i) & (target != i)).sum() for i in range(n_class)]
-    )
+    return torch.tensor([((pred == i) & (target != i)).sum() for i in range(n_class)])
+
 
 def false_negative(pred, target, n_class):
-    return torch.tensor(
-        [((pred != i) & (target == i)).sum() for i in range(n_class)]
-    )
+    return torch.tensor([((pred != i) & (target == i)).sum() for i in range(n_class)])
+
 
 def precision(tp, fp):
     res = tp / (tp + fp)
     res[torch.isnan(res)] = 0
     return res
 
+
 def recall(tp, fn):
     res = tp / (tp + fn)
     res[torch.isnan(res)] = 0
     return res
 
+
 def f1_score(prec, rec):
     f1_score = 2 * (prec * rec) / (prec + rec)
     f1_score[torch.isnan(f1_score)] = 0
     return f1_score
+
 
 def cal_maf1(tp, fp, fn):
     prec = precision(tp, fp)
@@ -531,13 +504,14 @@ def cal_maf1(tp, fp, fn):
     ma_f1 = f1_score(prec, rec)
     return torch.mean(ma_f1).cpu().numpy()
 
+
 def cal_mif1(tp, fp, fn):
-        gl_tp, gl_fp, gl_fn = torch.sum(tp), torch.sum(fp), torch.sum(fn)
-        gl_prec = precision(gl_tp, gl_fp)
-        gl_rec = recall(gl_tp, gl_fn)
-        mi_f1 = f1_score(gl_prec, gl_rec)
-        return mi_f1.cpu().numpy()
-    
+    gl_tp, gl_fp, gl_fn = torch.sum(tp), torch.sum(fp), torch.sum(fn)
+    gl_prec = precision(gl_tp, gl_fp)
+    gl_rec = recall(gl_tp, gl_fn)
+    mi_f1 = f1_score(gl_prec, gl_rec)
+    return mi_f1.cpu().numpy()
+
 
 def macro_f1(pred, target, n_class):
     tp = true_positive(pred, target, n_class).to(torch.float)
@@ -611,12 +585,13 @@ def sample_mask(idx, l):
     mask[idx] = 1
     return np.array(mask, dtype=np.bool)
 
+
 def row_normalize_features(features):
     """Row-normalize feature matrix and convert to tuple representation"""
     if isinstance(features, torch.Tensor):
         rowsum = torch.sum(features, dim=1)
         r_inv = torch.pow(rowsum, -1).flatten()
-        r_inv[torch.isinf(r_inv)] = 0.
+        r_inv[torch.isinf(r_inv)] = 0.0
         r_mat_inv = torch.diag(r_inv)
         features = r_mat_inv @ features
     else:
@@ -644,7 +619,9 @@ def k_fold(dataset, folds):
         for _, idx in skf.split(torch.zeros(len(dataset)), labels):
             test_indices.append(torch.from_numpy(idx).to(torch.long))
     elif isinstance(dataset, list):
-        for _, idx in skf.split(torch.zeros(len(dataset)), [data.y for data in dataset]):
+        for _, idx in skf.split(
+            torch.zeros(len(dataset)), [data.y for data in dataset]
+        ):
             test_indices.append(torch.from_numpy(idx).to(torch.long))
 
     val_indices = [test_indices[i - 1] for i in range(folds)]
@@ -664,33 +641,34 @@ def transform_relation_graph_list(hg, category, identity=True):
     for i, ntype in enumerate(hg.ntypes):
         if ntype == category:
             category_id = i
-    g = dgl.to_homogeneous(hg, ndata='h')
+    g = dgl.to_homogeneous(hg, ndata="h")
     # find out the target node ids in g
-    loc = (g.ndata[dgl.NTYPE] == category_id).to('cpu')
+    loc = (g.ndata[dgl.NTYPE] == category_id).to("cpu")
     category_idx = torch.arange(g.num_nodes())[loc]
 
     edges = g.edges()
     etype = g.edata[dgl.ETYPE]
     ctx = g.device
-    # g.edata['w'] = th.ones(g.num_edges(), device=ctx)
+    # g.edata['w'] = torch.ones(g.num_edges(), device=ctx)
     num_edge_type = torch.max(etype).item()
 
     # norm = EdgeWeightNorm(norm='right')
-    # edata = norm(g.add_self_loop(), th.ones(g.num_edges() + g.num_nodes(), device=ctx))
+    # edata = norm(g.add_self_loop(), torch.ones(g.num_edges() + g.num_nodes(), device=ctx))
     graph_list = []
     for i in range(num_edge_type + 1):
         e_ids = torch.nonzero(etype == i).squeeze(-1)
         sg = dgl.graph((edges[0][e_ids], edges[1][e_ids]), num_nodes=g.num_nodes())
         # sg.edata['w'] = edata[e_ids]
-        sg.edata['w'] = torch.ones(sg.num_edges(), device=ctx)
+        sg.edata["w"] = torch.ones(sg.num_edges(), device=ctx)
         graph_list.append(sg)
     if identity == True:
         x = torch.arange(0, g.num_nodes(), device=ctx)
         sg = dgl.graph((x, x))
         # sg.edata['w'] = edata[g.num_edges():]
-        sg.edata['w'] = torch.ones(g.num_nodes(), device=ctx)
+        sg.edata["w"] = torch.ones(g.num_nodes(), device=ctx)
         graph_list.append(sg)
-    return graph_list, g.ndata['h'], category_idx
+    return graph_list, g.ndata["h"], category_idx
+
 
 def get_nodes_dict(hg):
     n_dict = {}
@@ -741,8 +719,8 @@ def random_add_edge(adj, add_rate):
     num_nodes = max(row.max(), col.max()) + 1
     edge_num = adj.nnz
     num_edges_to_add = int(edge_num * add_rate)
-    row_ = np.random.randint(0, num_nodes, size=(num_edges_to_add, ))
-    col_ = np.random.randint(0, num_nodes, size=(num_edges_to_add, ))
+    row_ = np.random.randint(0, num_nodes, size=(num_edges_to_add,))
+    col_ = np.random.randint(0, num_nodes, size=(num_edges_to_add,))
     new_row = np.concatenate((row, row_), axis=0)
     new_col = np.concatenate((col, col_), axis=0)
     data = np.ones(edge_num + num_edges_to_add)
@@ -754,7 +732,7 @@ def get_knn_graph(features, k, dataset):
     metric = CosineSimilarity()
     adj = metric(features, features)
     adj = KNearestNeighbour(k=k)(adj).numpy()
-    if dataset != 'ogbn-arxiv':
+    if dataset != "ogbn-arxiv":
         adj = nx.adjacency_matrix(nx.from_numpy_array(adj))
     else:
         row, col = adj.nonzero()
@@ -772,3 +750,388 @@ def feature_mask(features, missing_rate):
 
 def apply_feature_mask(features, mask):
     features[mask] = float(0)
+
+def get_cur_time(timezone='Asia/Shanghai', t_format='%m-%d %H:%M:%S'):
+    return datetime.datetime.fromtimestamp(int(time.time()), pytz.timezone(timezone)).strftime(t_format)
+
+def time_logger(func):
+    def wrapper(*args, **kw):
+        start_time = time.time()
+        print(f"Start running {func.__name__} at {get_cur_time()}")
+        ret = func(*args, **kw)
+        print(
+            f"Finished running {func.__name__} at {get_cur_time()}, running time = {time2str(time.time() - start_time)}."
+        )
+        return ret
+
+    return wrapper
+
+
+def time2str(t):
+    if t > 86400:
+        return '{:.2f}day'.format(t / 86400)
+    if t > 3600:
+        return '{:.2f}h'.format(t / 3600)
+    elif t > 60:
+        return '{:.2f}min'.format(t / 60)
+    else:
+        return '{:.2f}s'.format(t)
+
+def graph_edge_to_lot(g):
+    # graph_edge_to list of (row_id, col_id) tuple
+    return list(
+        map(tuple, np.column_stack([_.cpu().numpy() for _ in g.edges()]).tolist())
+    )
+
+
+def min_max_scaling(input, type="col"):
+    """
+    min-max scaling modified from https://discuss.pytorch.org/t/how-to-efficiently-normalize-a-batch-of-tensor-to-0-1/65122/5
+
+    Parameters
+    ----------
+    input (2 dimensional torch tensor): input data to scale
+    type (str): type of scaling, row, col, or global.
+
+    Returns (2 dimensional torch tensor): min-max scaled torch tensor
+    -------
+    Example input tensor (list format):
+        [[-1, 2], [-0.5, 6], [0, 10], [1, 18]]
+    Scaled tensor (list format):
+        [[0.0, 0.0], [0.25, 0.25], [0.5, 0.5], [1.0, 1.0]]
+
+    """
+    if type in ["row", "col"]:
+        dim = 0 if type == "col" else 1
+        input -= input.min(dim).values
+        input /= input.max(dim).values
+        # corner case: the row/col's minimum value equals the maximum value.
+        input[input.isnan()] = 0
+        return input
+    elif type == "global":
+        return (input - input.min()) / (input.max() - input.min())
+    else:
+        ValueError("Invalid type of min-max scaling.")
+
+
+def edge_lists_to_set(_):
+    return set(list(map(tuple, _)))
+
+
+def mkdir_p(path, log=True):
+    """Create a directory for the specified path.
+    Parameters
+    ----------
+    path : str
+        Path name
+    log : bool
+        Whether to print result for directory creation
+    """
+    import errno
+    if os.path.exists(path): return
+    # print(path)
+    # path = path.replace('\ ',' ')
+    # print(path)
+    try:
+
+        os.makedirs(path)
+        if log:
+            print('Created directory {}'.format(path))
+    except OSError as exc:
+        if exc.errno == errno.EEXIST and os.path.isdir(path) and log:
+            print('Directory {} already exists.'.format(path))
+        else:
+            raise
+
+
+def mkdir_list(p_list, use_relative_path=True, log=True):
+    """Create directories for the specified path lists.
+        Parameters
+        ----------
+        p_list :Path lists
+
+    """
+    # ! Note that the paths MUST END WITH '/' !!!
+    root_path = os.path.abspath(os.path.dirname(__file__)).split('src')[0]
+    for p in p_list:
+        p = os.path.join(root_path, p) if use_relative_path else p
+        p = os.path.dirname(p)
+        mkdir_p(p, log)
+
+
+
+def save_pickle(var, f_name):
+    mkdir_list([f_name])
+    pickle.dump(var, open(f_name, "wb"))
+    print(f"File {f_name} successfully saved!")
+
+
+def load_pickle(f_name):
+    return pickle.load(open(f_name, "rb"))
+
+
+from torch.optim.lr_scheduler import _LRScheduler
+
+
+class PolynomialLRDecay(_LRScheduler):
+    """Polynomial learning rate decay until step reach to max_decay_step
+
+    Args:
+        optimizer (Optimizer): Wrapped optimizer.
+        max_decay_steps: after this step, we stop decreasing learning rate
+        end_learning_rate: scheduler stoping learning rate decay, value of learning rate must be this value
+        power: The power of the polynomial.
+    """
+
+    def __init__(self, optimizer, max_decay_steps, end_learning_rate=0.0001, power=1.0):
+        if max_decay_steps <= 1.0:
+            raise ValueError("max_decay_steps should be greater than 1.")
+        self.max_decay_steps = max_decay_steps
+        self.end_learning_rate = end_learning_rate
+        self.power = power
+        self.last_step = 0
+        super().__init__(optimizer)
+
+    def get_lr(self):
+        if self.last_step > self.max_decay_steps:
+            return [self.end_learning_rate for _ in self.base_lrs]
+
+        return [
+            (base_lr - self.end_learning_rate)
+            * ((1 - self.last_step / self.max_decay_steps) ** (self.power))
+            + self.end_learning_rate
+            for base_lr in self.base_lrs
+        ]
+
+    def step(self, step=None):
+        if step is None:
+            step = self.last_step + 1
+        self.last_step = step if step != 0 else 1
+        if self.last_step <= self.max_decay_steps:
+            decay_lrs = [
+                (base_lr - self.end_learning_rate)
+                * ((1 - self.last_step / self.max_decay_steps) ** (self.power))
+                + self.end_learning_rate
+                for base_lr in self.base_lrs
+            ]
+            for param_group, lr in zip(self.optimizer.param_groups, decay_lrs):
+                param_group["lr"] = lr
+
+
+import math
+
+
+class MemoryMoCo(nn.Module):
+    """Fixed-size queue with momentum encoder"""
+
+    def __init__(self, inputSize, K, T=0.07, device=None):
+        super(MemoryMoCo, self).__init__()
+        self.device = device
+        self.queueSize = K
+        self.T = T
+        self.index = 0
+
+        self.register_buffer("params", torch.tensor([-1]))
+        stdv = 1.0 / math.sqrt(inputSize / 3)
+        self.register_buffer(
+            "memory", torch.rand(self.queueSize, inputSize).mul_(2 * stdv).add_(-stdv)
+        )
+        print("using queue shape: ({},{})".format(self.queueSize, inputSize))
+
+    def forward(self, q, k):
+        batchSize = q.shape[0]
+        k = k.detach()
+        Z = self.params[0].item()
+
+        # pos logit
+        l_pos = torch.bmm(q.view(batchSize, 1, -1), k.view(batchSize, -1, 1))
+        l_pos = l_pos.view(batchSize, 1)
+        # neg logit
+        queue = self.memory.clone()
+        l_neg = torch.mm(queue.detach(), q.transpose(1, 0))
+        l_neg = l_neg.transpose(0, 1)
+        out = torch.cat((l_pos, l_neg), dim=1)
+
+        out = torch.div(out, self.T)
+        out = out.squeeze().contiguous()
+
+        # # update memory
+        with torch.no_grad():
+            out_ids = torch.arange(batchSize).to(self.device)
+            out_ids += self.index
+            out_ids = torch.fmod(out_ids, self.queueSize)
+            out_ids = out_ids.long()
+            self.memory.index_copy_(0, out_ids, k)
+            self.index = (self.index + batchSize) % self.queueSize
+
+        return out
+
+
+class NCESoftmaxLoss(nn.Module):
+    """Softmax cross-entropy loss (a.k.a., info-NCE loss in CPC paper)"""
+
+    def __init__(self, device):
+        super(NCESoftmaxLoss, self).__init__()
+        self.device = device
+        self.criterion = nn.CrossEntropyLoss()
+
+    def forward(self, x):
+        bsz = x.shape[0]
+        x = x.squeeze()
+        label = torch.zeros([bsz], device=self.device).long()
+        loss = self.criterion(x, label)
+        return loss
+
+
+def moment_update(model, model_ema, m):
+    """model_ema = m * model_ema + (1 - m) model"""
+    for p1, p2 in zip(model.parameters(), model_ema.parameters()):
+        p2.data.mul_(m).add_(1 - m, p1.detach().data)
+
+
+def para_copy(model_to_init, pretrained_model, paras_to_copy):
+    # Pass parameters (if exists) of old model to new model
+    para_dict_to_update = model_to_init.gnn.state_dict()
+    pretrained_dict = {
+        k: v for k, v in pretrained_model.state_dict().items() if k in paras_to_copy
+    }
+    para_dict_to_update.update(pretrained_dict)
+    model_to_init.gnn.load_state_dict(para_dict_to_update)
+
+
+class Evaluator:
+    def __init__(self, name):
+        self.name = name
+
+        meta_info = pd.read_csv(os.path.join(os.path.dirname(__file__), 'master.csv'), index_col=0, keep_default_na=False)
+        if not self.name in meta_info:
+            print(self.name)
+            error_mssg = 'Invalid dataset name {}.\n'.format(self.name)
+            error_mssg += 'Available datasets are as follows:\n'
+            error_mssg += '\n'.join(meta_info.keys())
+            raise ValueError(error_mssg)
+
+        self.num_tasks = int(meta_info[self.name]['num tasks'])
+        self.eval_metric = meta_info[self.name]['eval metric']
+
+
+    def _parse_and_check_input(self, input_dict):
+        if self.eval_metric == 'rocauc' or self.eval_metric == 'acc':
+            if not 'y_true' in input_dict:
+                raise RuntimeError('Missing key of y_true')
+            if not 'y_pred' in input_dict:
+                raise RuntimeError('Missing key of y_pred')
+
+            y_true, y_pred = input_dict['y_true'], input_dict['y_pred']
+
+            '''
+                y_true: numpy ndarray or torch tensor of shape (num_nodes num_tasks)
+                y_pred: numpy ndarray or torch tensor of shape (num_nodes num_tasks)
+            '''
+
+            # converting to torch.Tensor to numpy on cpu
+            if torch is not None and isinstance(y_true, torch.Tensor):
+                y_true = y_true.detach().cpu().numpy()
+
+            if torch is not None and isinstance(y_pred, torch.Tensor):
+                y_pred = y_pred.detach().cpu().numpy()
+
+            ## check type
+            if not (isinstance(y_true, np.ndarray) and isinstance(y_true, np.ndarray)):
+                raise RuntimeError('Arguments to Evaluator need to be either numpy ndarray or torch tensor')
+
+            if not y_true.shape == y_pred.shape:
+                raise RuntimeError('Shape of y_true and y_pred must be the same')
+
+            if not y_true.ndim == 2:
+                raise RuntimeError('y_true and y_pred must to 2-dim arrray, {}-dim array given'.format(y_true.ndim))
+
+            if not y_true.shape[1] == self.num_tasks:
+                raise RuntimeError('Number of tasks for {} should be {} but {} given'.format(self.name, self.num_tasks, y_true.shape[1]))
+
+            return y_true, y_pred
+
+        else:
+            raise ValueError('Undefined eval metric %s ' % (self.eval_metric))
+
+
+    def eval(self, input_dict):
+
+        if self.eval_metric == 'rocauc':
+            y_true, y_pred = self._parse_and_check_input(input_dict)
+            return self._eval_rocauc(y_true, y_pred)
+        elif self.eval_metric == 'acc':
+            y_true, y_pred = self._parse_and_check_input(input_dict)
+            return self._eval_acc(y_true, y_pred)
+        else:
+            raise ValueError('Undefined eval metric %s ' % (self.eval_metric))
+
+    @property
+    def expected_input_format(self):
+        desc = '==== Expected input format of Evaluator for {}\n'.format(self.name)
+        if self.eval_metric == 'rocauc':
+            desc += '{\'y_true\': y_true, \'y_pred\': y_pred}\n'
+            desc += '- y_true: numpy ndarray or torch tensor of shape (num_nodes num_tasks)\n'
+            desc += '- y_pred: numpy ndarray or torch tensor of shape (num_nodes num_tasks)\n'
+            desc += 'where y_pred stores score values (for computing ROC-AUC),\n'
+            desc += 'num_task is {}, and '.format(self.num_tasks)
+            desc += 'each row corresponds to one node.\n'
+        elif self.eval_metric == 'acc':
+            desc += '{\'y_true\': y_true, \'y_pred\': y_pred}\n'
+            desc += '- y_true: numpy ndarray or torch tensor of shape (num_nodes num_tasks)\n'
+            desc += '- y_pred: numpy ndarray or torch tensor of shape (num_nodes num_tasks)\n'
+            desc += 'where y_pred stores predicted class label (integer),\n'
+            desc += 'num_task is {}, and '.format(self.num_tasks)
+            desc += 'each row corresponds to one node.\n'
+        else:
+            raise ValueError('Undefined eval metric %s ' % (self.eval_metric))
+
+        return desc
+
+    @property
+    def expected_output_format(self):
+        desc = '==== Expected output format of Evaluator for {}\n'.format(self.name)
+        if self.eval_metric == 'rocauc':
+            desc += '{\'rocauc\': rocauc}\n'
+            desc += '- rocauc (float): ROC-AUC score averaged across {} task(s)\n'.format(self.num_tasks)
+        elif self.eval_metric == 'acc':
+            desc += '{\'acc\': acc}\n'
+            desc += '- acc (float): Accuracy score averaged across {} task(s)\n'.format(self.num_tasks)
+        else:
+            raise ValueError('Undefined eval metric %s ' % (self.eval_metric))
+
+        return desc
+
+    def _eval_rocauc(self, y_true, y_pred):
+        '''
+            compute ROC-AUC and AP score averaged across tasks
+        '''
+
+        rocauc_list = []
+
+        for i in range(y_true.shape[1]):
+            #AUC is only defined when there is at least one positive data.
+            if np.sum(y_true[:,i] == 1) > 0 and np.sum(y_true[:,i] == 0) > 0:
+                is_labeled = y_true[:,i] == y_true[:,i]
+                rocauc_list.append(roc_auc_score(y_true[is_labeled,i], y_pred[is_labeled,i]))
+
+        if len(rocauc_list) == 0:
+            raise RuntimeError('No positively labeled data available. Cannot compute ROC-AUC.')
+
+        return {'rocauc': sum(rocauc_list)/len(rocauc_list)}
+
+    def _eval_acc(self, y_true, y_pred):
+        acc_list = []
+
+        for i in range(y_true.shape[1]):
+            is_labeled = y_true[:,i] == y_true[:,i]
+            correct = y_true[is_labeled,i] == y_pred[is_labeled,i]
+            acc_list.append(float(np.sum(correct))/len(correct))
+
+        return {'acc': sum(acc_list)/len(acc_list)}
+
+
+def global_topk(input, k, largest):
+    # https://stackoverflow.com/questions/64241325/top-k-indices-of-a-multi-dimensional-tensor
+    v, i = torch.topk(input.flatten(), k, largest=largest)
+    return np.array(np.unravel_index(i.cpu().numpy(), input.shape)).T.tolist()

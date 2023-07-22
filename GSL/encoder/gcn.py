@@ -97,11 +97,16 @@ class SparseDropout(nn.Module):
 
 
 class GCN(nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, dropout_adj, sparse, residual=False, activation_last=None, conv_bias=False):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, dropout_adj, sparse, residual=False, activation_last=None, conv_bias=False, bn=False):
         super(GCN, self).__init__()
 
         self.residual = residual
         self.layers = nn.ModuleList()
+        self.bn = bn
+        if self.bn:
+            self.bn_list = nn.ModuleList()
+            for _ in range(num_layers-1):
+                self.bn_list.append(nn.BatchNorm1d(hidden_channels))
 
         if self.residual:
             self.in_linear = nn.Linear(in_channels, hidden_channels)
@@ -135,6 +140,14 @@ class GCN(nn.Module):
                 x = F.dropout(x, p=self.dropout, training=self.training)
                 outputs.append(x)
             x = self.out_linear(x)
+        elif self.bn:
+            for _, conv in enumerate(self.layers[:-1]):
+                x = conv(x, Adj, sparse=is_torch_sparse_tensor)
+                x = self.bn_list[_](x)
+                x = F.relu(x)
+                x = F.dropout(x, p=self.dropout, training=self.training)
+                outputs.append(x)
+            x = self.layers[-1](x, Adj, sparse=is_torch_sparse_tensor)
         else:
             for _, conv in enumerate(self.layers[:-1]):
                 x = conv(x, Adj, sparse=is_torch_sparse_tensor)

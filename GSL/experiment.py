@@ -42,7 +42,7 @@ class Experiment(object):
         self.model_dict = {
             'GCN': GCN_Trainer, 'MLP': MLP_Trainer, 'GRCN': GRCN, 'ProGNN': ProGNN, 'IDGL': IDGL, 'GEN': GEN, 'CoGSL': CoGSL, 
             'SLAPS': SLAPS, 'SUBLIME': SUBLIME, 'STABLE': STABLE, 'GTN': GTN, 'HGSL': HGSL, 
-            'HGPSL': HGPSL, 'VIBGSL': VIBGSL, 'HESGSL': HESGSL
+            'HGPSL': HGPSL, 'VIBGSL': VIBGSL, 'HESGSL': HESGSL, 'GSR': GSR, 
             # 'nodeformer': NodeFormer,
         }
 
