@@ -160,7 +160,7 @@ cornell:
   sparse: 0
   gen_mode: 1
   non_linearity: relu
-  mlp_h: 1433
+  mlp_h: 1703
   mlp_act: relu
   epoch_d: 5
 
@@ -186,7 +186,7 @@ actor:
   sparse: 0
   gen_mode: 1
   non_linearity: relu
-  mlp_h: 1433
+  mlp_h: 932
   mlp_act: relu
   epoch_d: 5
 
@@ -212,7 +212,7 @@ texas:
   sparse: 0
   gen_mode: 1
   non_linearity: relu
-  mlp_h: 1433
+  mlp_h: 1703
   mlp_act: relu
   epoch_d: 5
 
@@ -238,7 +238,7 @@ wisconsin:
   sparse: 0
   gen_mode: 1
   non_linearity: relu
-  mlp_h: 1433
+  mlp_h: 1703
   mlp_act: relu
   epoch_d: 5
 
