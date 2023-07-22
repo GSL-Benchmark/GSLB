@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import yaml
 from easydict import EasyDict as edict
-from hyperopt import Trials, fmin, hp, tpe
+# from hyperopt import Trials, fmin, hp, tpe
 
 from GSL.data import *
 from GSL.encoder import *
