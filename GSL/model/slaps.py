@@ -4,12 +4,9 @@ from GSL.learner import *
 from GSL.encoder import *
 from GSL.metric import *
 from GSL.processor import *
-from GSL.eval import ClsEvaluator
 import math
 import torch
 import torch.nn as nn
-from copy import deepcopy
-from sklearn.neighbors import kneighbors_graph
 
 class SLAPS(BaseModel):
     def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, data):
@@ -126,7 +123,6 @@ class SLAPS(BaseModel):
             test_loss_, test_accu_ = self.get_loss_learnable_adj(self.model2, test_mask, features, labels, adj)
             return test_accu_.item()
 
-# TODO: move GCN_DAE and GCN_C to GSL/encoder/
 class GCN_DAE(nn.Module):
     def __init__(self, config, nlayers, in_dim, hidden_dim, num_classes, dropout, dropout_adj, features, k, knn_metric, i_,
                  non_linearity, normalization, mlp_h, gen_mode, sparse, mlp_act):
@@ -169,9 +165,6 @@ class GCN_DAE(nn.Module):
             activation = ({'relu': F.relu, 'prelu': F.prelu, 'tanh': F.tanh})[mlp_act]
             self.graph_gen = MLPLearner(metric, processors, 2, features.shape[1],
                                         math.floor(math.sqrt(features.shape[1] * self.mlp_h)), activation, sparse, k=k)
-            # self.graph_gen = MLP(2, features.shape[1], math.floor(math.sqrt(features.shape[1] * self.mlp_h)),
-            #                      self.mlp_h, mlp_epochs, k, knn_metric, self.non_linearity, self.i, self.sparse,
-            #                      mlp_act).cuda()
 
     def get_adj(self, h):
         Adj_ = self.graph_gen(h)
@@ -231,108 +224,3 @@ class GCN_C(nn.Module):
             x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.layers[-1](x, Adj)
         return x
-
-# class GCNConv_dense(nn.Module):
-#     def __init__(self, input_size, output_size):
-#         super(GCNConv_dense, self).__init__()
-#         self.linear = nn.Linear(input_size, output_size)
-#
-#     def init_para(self):
-#         self.linear.reset_parameters()
-#
-#     def forward(self, input, A, sparse=False):
-#         hidden = self.linear(input)
-#         if sparse:
-#             output = torch.sparse.mm(A, hidden)
-#         else:
-#             output = torch.matmul(A, hidden)
-#         return output
-#
-#
-# def apply_non_linearity(tensor, non_linearity, i):
-#     if non_linearity == 'elu':
-#         return F.elu(tensor * i - i) + 1
-#     elif non_linearity == 'relu':
-#         return F.relu(tensor)
-#     elif non_linearity == 'none':
-#         return tensor
-#     else:
-#         raise NameError('We dont support the non-linearity yet')
-#
-# def nearest_neighbors(X, k, metric):
-#     adj = kneighbors_graph(X, k, metric=metric)
-#     adj = np.array(adj.todense(), dtype=np.float32)
-#     adj += np.eye(adj.shape[0])
-#     return adj
-#
-# class MLP(nn.Module):
-#     def __init__(self, nlayers, isize, hsize, osize, mlp_epochs, k, knn_metric, non_linearity, i, sparse, mlp_act):
-#         super(MLP, self).__init__()
-#
-#         self.layers = nn.ModuleList()
-#         if nlayers == 1:
-#             self.layers.append(nn.Linear(isize, hsize))
-#         else:
-#             self.layers.append(nn.Linear(isize, hsize))
-#             for _ in range(nlayers - 2):
-#                 self.layers.append(nn.Linear(hsize, hsize))
-#             self.layers.append(nn.Linear(hsize, osize))
-#
-#         self.input_dim = isize
-#         self.output_dim = osize
-#         self.mlp_epochs = mlp_epochs
-#         self.k = k
-#         self.knn_metric = knn_metric
-#         self.non_linearity = non_linearity
-#         self.mlp_knn_init()
-#         self.i = i
-#         self.sparse = sparse
-#         self.mlp_act = mlp_act
-#
-#     def internal_forward(self, h):
-#         for i, layer in enumerate(self.layers):
-#             h = layer(h)
-#             if i != (len(self.layers) - 1):
-#                 if self.mlp_act == "relu":
-#                     h = F.relu(h)
-#                 elif self.mlp_act == "tanh":
-#                     h = F.tanh(h)
-#         return h
-#
-#     def mlp_knn_init(self):
-#         if self.input_dim == self.output_dim:
-#             print("MLP full")
-#             for layer in self.layers:
-#                 layer.weight = nn.Parameter(torch.eye(self.input_dim))
-#         else:
-#             optimizer = torch.optim.Adam(self.parameters(), 0.01)
-#             labels = torch.from_numpy(nearest_neighbors(self.features.cpu(), self.k, self.knn_metric)).cuda()
-#
-#             for epoch in range(1, self.mlp_epochs):
-#                 self.train()
-#                 logits = self.forward()
-#                 loss = F.mse_loss(logits, labels, reduction='sum')
-#                 if epoch % 10 == 0:
-#                     print("MLP loss", loss.item())
-#                 optimizer.zero_grad()
-#                 loss.backward()
-#                 optimizer.step()
-#
-#     def forward(self, features):
-#         if self.sparse:
-#             embeddings = self.internal_forward(features)
-#             rows, cols, values = knn_fast(embeddings, self.k, 1000)
-#             rows_ = torch.cat((rows, cols))
-#             cols_ = torch.cat((cols, rows))
-#             values_ = torch.cat((values, values))
-#             values_ = apply_non_linearity(values_, self.non_linearity, self.i)
-#             adj = dgl.graph((rows_, cols_), num_nodes=features.shape[0], device='cuda')
-#             adj.edata['w'] = values_
-#             return adj
-#         else:
-#             embeddings = self.internal_forward(features)
-#             embeddings = F.normalize(embeddings, dim=1, p=2)
-#             similarities = cal_similarity_graph(embeddings)
-#             similarities = top_k(similarities, self.k + 1)
-#             similarities = apply_non_linearity(similarities, self.non_linearity, self.i)
-#             return similarities
