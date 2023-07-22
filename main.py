@@ -42,5 +42,5 @@ if __name__ == '__main__':
                      data_path=data_path, config_path=config_path, metric=args.metric, sparse=args.sparse,
                      use_knn=args.use_knn, k=args.k, drop_rate=args.drop_rate, gpu_num=args.gpu_num,
                      add_rate=args.add_rate, use_mettack=args.use_mettack, ptb_rate=args.ptb_rate)
-    # exp.run()
-    exp.hp_search("hyperparams/idgl_hyper.yaml")
+    exp.run()
+    # exp.hp_search("hyperparams/idgl_hyper.yaml")

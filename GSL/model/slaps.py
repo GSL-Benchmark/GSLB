@@ -9,6 +9,7 @@ import math
 import torch
 import torch.nn as nn
 from copy import deepcopy
+from sklearn.neighbors import kneighbors_graph
 
 class SLAPS(BaseModel):
     def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, data):
@@ -23,22 +24,12 @@ class SLAPS(BaseModel):
                          features=features.cpu(), k=self.config.k, knn_metric=self.config.knn_metric, i_=self.config.i,
                          non_linearity=self.config.non_linearity, normalization=self.config.normalization,
                          mlp_h=self.config.mlp_h,
-                         mlp_epochs=self.config.mlp_epochs, gen_mode=self.config.gen_mode, sparse=self.config.sparse,
+                         gen_mode=self.config.gen_mode, sparse=self.config.sparse,
                          mlp_act=self.config.mlp_act).to(device)
         self.model2 = GCN_C(in_channels=num_features, hidden_channels=self.config.hidden, out_channels=num_classes,
                        num_layers=self.config.nlayers, dropout=self.config.dropout2,
                        dropout_adj=self.config.dropout_adj2,
                        sparse=self.config.sparse).to(device)
-
-    def half_val_as_train(self, val_mask, train_mask):
-        val_size = np.count_nonzero(val_mask)
-        counter = 0
-        for i in range(len(val_mask)):
-            if val_mask[i] and counter < val_size / 2:
-                counter += 1
-                val_mask[i] = False
-                train_mask[i] = True
-        return val_mask, train_mask
 
     def get_loss_masked_features(self, model, features, mask, ogb, noise, loss_t):
         if ogb:
@@ -78,57 +69,55 @@ class SLAPS(BaseModel):
             test_mask = data.test_masks[split_num % 10]
         else:
             train_mask, val_mask, test_mask = data.train_mask, data.val_mask, data.test_mask
-        if self.config.half_val_as_train:
-            val_mask, train_mask = self.half_val_as_train(val_mask, train_mask)
 
-        for trial in range(self.config.ntrials):
-            optimizer1 = torch.optim.Adam(self.model1.parameters(), lr=self.config.lr_adj, weight_decay=self.config.w_decay_adj)
-            optimizer2 = torch.optim.Adam(self.model2.parameters(), lr=self.config.lr, weight_decay=self.config.w_decay)
+        optimizer1 = torch.optim.Adam(self.model1.parameters(), lr=self.config.lr_adj, weight_decay=self.config.w_decay_adj)
+        optimizer2 = torch.optim.Adam(self.model2.parameters(), lr=self.config.lr, weight_decay=self.config.w_decay)
 
-            best_val_result = 0.0
+        best_val_result = 0.0
 
-            for epoch in range(1, self.config.epochs_adj + 1):
-                self.model1.train()
-                self.model2.train()
+        for epoch in range(1, self.config.epochs_adj + 1):
+            self.model1.train()
+            self.model2.train()
 
-                optimizer1.zero_grad()
-                optimizer2.zero_grad()
+            optimizer1.zero_grad()
+            optimizer2.zero_grad()
 
-                if self.config.dataset.startswith('ogb') or self.config.dataset in ["wine", "digits", "breast_cancer"]:
-                    mask = get_random_mask_ogb(features, self.config.ratio).to(self.device)
-                    ogb = True
-                elif self.config.dataset == "20news10":
-                    mask = get_random_mask(features, self.config.ratio, self.config.nr).to(self.device)
-                    ogb = True
-                else:
-                    mask = get_random_mask(features, self.config.ratio, self.config.nr).to(self.device)
-                    ogb = False
+            if self.config.dataset.startswith('ogb') or self.config.dataset in ["wine", "digits", "breast_cancer"]:
+                mask = get_random_mask_ogb(features, self.config.ratio).to(self.device)
+                ogb = True
+            elif self.config.dataset == "20news10":
+                mask = get_random_mask(features, self.config.ratio, self.config.nr).to(self.device)
+                ogb = True
+            else:
+                mask = get_random_mask(features, self.config.ratio, self.config.nr).to(self.device)
+                ogb = False
 
-                if epoch < self.config.epochs_adj // self.config.epoch_d:
-                    self.model2.eval()
-                    loss1, Adj = self.get_loss_masked_features(self.model1, features, mask, ogb, self.config.noise, self.config.loss)
-                    loss2 = torch.tensor(0).to(self.device)
-                else:
-                    loss1, Adj = self.get_loss_masked_features(self.model1, features, mask, ogb, self.config.noise, self.config.loss)
-                    loss2, train_result = self.get_loss_learnable_adj(self.model2, train_mask, features, labels, Adj)
+            if epoch < self.config.epochs_adj // self.config.epoch_d:
+                self.model2.eval()
+                loss1, Adj = self.get_loss_masked_features(self.model1, features, mask, ogb, self.config.noise, self.config.loss)
+                loss2 = torch.tensor(0).to(self.device)
+            else:
+                loss1, Adj = self.get_loss_masked_features(self.model1, features, mask, ogb, self.config.noise, self.config.loss)
+                loss2, train_result = self.get_loss_learnable_adj(self.model2, train_mask, features, labels, Adj)
 
-                loss = loss1 * self.config.lambda_ + loss2
-                loss.backward()
-                optimizer1.step()
-                optimizer2.step()
+            loss = loss1 * self.config.lambda_ + loss2
+            loss.backward()
+            optimizer1.step()
+            optimizer2.step()
 
-                if epoch >= self.config.epochs_adj // self.config.epoch_d and epoch % 1 == 0:
-                    val_result = self.test(val_mask, features, labels, Adj)
-                    test_result = self.test(test_mask, features, labels, Adj)
-                    if val_result > best_val_result:
-                        best_val_result = val_result
-                        self.best_result = test_result
-                        self.Adj = Adj
-                    print(f'Epoch: {epoch: 02d}, '
-                          f'Loss: {loss:.4f}, '
-                          f'Train: {100 * train_result.item():.2f}%, '
-                          f'Valid: {100 * val_result:.2f}%, '
-                          f'Test: {100 * test_result:.2f}%')
+            if epoch >= self.config.epochs_adj // self.config.epoch_d and epoch % 1 == 0:
+                val_result = self.test(val_mask, features, labels, Adj)
+                test_result = self.test(test_mask, features, labels, Adj)
+                if val_result > best_val_result:
+                    # best_weight = deepcopy(self.state_dict())
+                    best_val_result = val_result
+                    self.best_result = test_result
+                    self.Adj = Adj
+                print(f'Epoch: {epoch: 02d}, '
+                      f'Loss: {loss:.4f}, '
+                      f'Train: {100 * train_result.item():.2f}%, '
+                      f'Valid: {100 * val_result:.2f}%, '
+                      f'Test: {100 * test_result:.2f}%')
 
     def test(self, test_mask, features, labels, adj):
         with torch.no_grad():
@@ -140,7 +129,7 @@ class SLAPS(BaseModel):
 # TODO: move GCN_DAE and GCN_C to GSL/encoder/
 class GCN_DAE(nn.Module):
     def __init__(self, config, nlayers, in_dim, hidden_dim, num_classes, dropout, dropout_adj, features, k, knn_metric, i_,
-                 non_linearity, normalization, mlp_h, mlp_epochs, gen_mode, sparse, mlp_act):
+                 non_linearity, normalization, mlp_h, gen_mode, sparse, mlp_act):
         super(GCN_DAE, self).__init__()
 
         self.layers = nn.ModuleList()
@@ -167,7 +156,6 @@ class GCN_DAE(nn.Module):
         self.normalization = normalization
         self.nnodes = features.shape[0]
         self.mlp_h = mlp_h
-        self.mlp_epochs = mlp_epochs
         self.sparse = sparse
 
         if gen_mode == 0:
@@ -181,10 +169,9 @@ class GCN_DAE(nn.Module):
             activation = ({'relu': F.relu, 'prelu': F.prelu, 'tanh': F.tanh})[mlp_act]
             self.graph_gen = MLPLearner(metric, processors, 2, features.shape[1],
                                         math.floor(math.sqrt(features.shape[1] * self.mlp_h)), activation, sparse, k=k)
-        # TODO: implement MLP-D in PyGSL style
-        # elif gen_mode == 2:
-        #     self.graph_gen = MLP_Diag(2, features.shape[1], k, knn_metric, self.non_linearity, self.i, sparse,
-        #                               mlp_act).to(self.device)
+            # self.graph_gen = MLP(2, features.shape[1], math.floor(math.sqrt(features.shape[1] * self.mlp_h)),
+            #                      self.mlp_h, mlp_epochs, k, knn_metric, self.non_linearity, self.i, self.sparse,
+            #                      mlp_act).cuda()
 
     def get_adj(self, h):
         Adj_ = self.graph_gen(h)
@@ -244,3 +231,108 @@ class GCN_C(nn.Module):
             x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.layers[-1](x, Adj)
         return x
+
+# class GCNConv_dense(nn.Module):
+#     def __init__(self, input_size, output_size):
+#         super(GCNConv_dense, self).__init__()
+#         self.linear = nn.Linear(input_size, output_size)
+#
+#     def init_para(self):
+#         self.linear.reset_parameters()
+#
+#     def forward(self, input, A, sparse=False):
+#         hidden = self.linear(input)
+#         if sparse:
+#             output = torch.sparse.mm(A, hidden)
+#         else:
+#             output = torch.matmul(A, hidden)
+#         return output
+#
+#
+# def apply_non_linearity(tensor, non_linearity, i):
+#     if non_linearity == 'elu':
+#         return F.elu(tensor * i - i) + 1
+#     elif non_linearity == 'relu':
+#         return F.relu(tensor)
+#     elif non_linearity == 'none':
+#         return tensor
+#     else:
+#         raise NameError('We dont support the non-linearity yet')
+#
+# def nearest_neighbors(X, k, metric):
+#     adj = kneighbors_graph(X, k, metric=metric)
+#     adj = np.array(adj.todense(), dtype=np.float32)
+#     adj += np.eye(adj.shape[0])
+#     return adj
+#
+# class MLP(nn.Module):
+#     def __init__(self, nlayers, isize, hsize, osize, mlp_epochs, k, knn_metric, non_linearity, i, sparse, mlp_act):
+#         super(MLP, self).__init__()
+#
+#         self.layers = nn.ModuleList()
+#         if nlayers == 1:
+#             self.layers.append(nn.Linear(isize, hsize))
+#         else:
+#             self.layers.append(nn.Linear(isize, hsize))
+#             for _ in range(nlayers - 2):
+#                 self.layers.append(nn.Linear(hsize, hsize))
+#             self.layers.append(nn.Linear(hsize, osize))
+#
+#         self.input_dim = isize
+#         self.output_dim = osize
+#         self.mlp_epochs = mlp_epochs
+#         self.k = k
+#         self.knn_metric = knn_metric
+#         self.non_linearity = non_linearity
+#         self.mlp_knn_init()
+#         self.i = i
+#         self.sparse = sparse
+#         self.mlp_act = mlp_act
+#
+#     def internal_forward(self, h):
+#         for i, layer in enumerate(self.layers):
+#             h = layer(h)
+#             if i != (len(self.layers) - 1):
+#                 if self.mlp_act == "relu":
+#                     h = F.relu(h)
+#                 elif self.mlp_act == "tanh":
+#                     h = F.tanh(h)
+#         return h
+#
+#     def mlp_knn_init(self):
+#         if self.input_dim == self.output_dim:
+#             print("MLP full")
+#             for layer in self.layers:
+#                 layer.weight = nn.Parameter(torch.eye(self.input_dim))
+#         else:
+#             optimizer = torch.optim.Adam(self.parameters(), 0.01)
+#             labels = torch.from_numpy(nearest_neighbors(self.features.cpu(), self.k, self.knn_metric)).cuda()
+#
+#             for epoch in range(1, self.mlp_epochs):
+#                 self.train()
+#                 logits = self.forward()
+#                 loss = F.mse_loss(logits, labels, reduction='sum')
+#                 if epoch % 10 == 0:
+#                     print("MLP loss", loss.item())
+#                 optimizer.zero_grad()
+#                 loss.backward()
+#                 optimizer.step()
+#
+#     def forward(self, features):
+#         if self.sparse:
+#             embeddings = self.internal_forward(features)
+#             rows, cols, values = knn_fast(embeddings, self.k, 1000)
+#             rows_ = torch.cat((rows, cols))
+#             cols_ = torch.cat((cols, rows))
+#             values_ = torch.cat((values, values))
+#             values_ = apply_non_linearity(values_, self.non_linearity, self.i)
+#             adj = dgl.graph((rows_, cols_), num_nodes=features.shape[0], device='cuda')
+#             adj.edata['w'] = values_
+#             return adj
+#         else:
+#             embeddings = self.internal_forward(features)
+#             embeddings = F.normalize(embeddings, dim=1, p=2)
+#             similarities = cal_similarity_graph(embeddings)
+#             similarities = top_k(similarities, self.k + 1)
+#             similarities = apply_non_linearity(similarities, self.non_linearity, self.i)
+#             return similarities
