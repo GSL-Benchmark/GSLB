@@ -105,7 +105,7 @@ class GCN(nn.Module):
         self.bn = bn
         if self.bn:
             self.bn_list = nn.ModuleList()
-            for _ in range(num_layers-1):
+            for _ in range(num_layers - 1):
                 self.bn_list.append(nn.BatchNorm1d(hidden_channels))
 
         if self.residual:
@@ -165,15 +165,20 @@ class GCN(nn.Module):
 
 
 class GCN_dgl(nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, dropout_adj, activation_last=None):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, dropout_adj, activation_last=None, bn=False, allow_zero_in_degree=False):
         super(GCN_dgl, self).__init__()
 
         self.layers = nn.ModuleList()
+        self.bn = bn
+        if self.bn:
+            self.bn_list = nn.ModuleList()
+            for _ in range(num_layers - 1):
+                self.bn_list.append(nn.BatchNorm1d(hidden_channels))
 
-        self.layers.append(GraphConv(in_channels, hidden_channels))
+        self.layers.append(GraphConv(in_channels, hidden_channels, allow_zero_in_degree=allow_zero_in_degree))
         for _ in range(num_layers - 2):
-            self.layers.append(GraphConv(hidden_channels, hidden_channels))
-        self.layers.append(GraphConv(hidden_channels, out_channels))
+            self.layers.append(GraphConv(hidden_channels, hidden_channels, allow_zero_in_degree=allow_zero_in_degree))
+        self.layers.append(GraphConv(hidden_channels, out_channels, allow_zero_in_degree=allow_zero_in_degree))
 
         self.dropout = dropout
         self.dropout_adj_p = dropout_adj
@@ -182,17 +187,40 @@ class GCN_dgl(nn.Module):
     def reset_parameters(self):
         for conv in self.layers:
             conv.reset_parameters()
+    
+    def _stochastic_forward(self, blocks, x):
+        
+        for i, (conv, block) in enumerate(zip(self.layers[:-1], blocks[:-1])):
+            x = conv(block, x)
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+        
+        x = self.layers[-1](blocks[-1], x)
+        if self.activation_last == 'log_softmax':
+            x = F.log_softmax(x, dim=1)
+        if self.activation_last == 'relu':
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+        return x
 
-    def forward(self, x, adj_t):
+    def forward(self, x, adj_t, stochastic=False):
         Adj = adj_t
-        Adj.edata['w'] = F.dropout(Adj.edata['w'], p=self.dropout_adj_p, training=self.training)
+        if stochastic:
+            return self._stochastic_forward(Adj, x)
+            
+        if self.dropout_adj_p > 0:
+            Adj.edata['w'] = F.dropout(Adj.edata['w'], p=self.dropout_adj_p, training=self.training)
         for i, conv in enumerate(self.layers[:-1]):
             x = conv(Adj, x)
+            if self.bn: x = self.bn_list[i](x)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.layers[-1](Adj, x)
         if self.activation_last == 'log_softmax':
             x = F.log_softmax(x, dim=1)
+        if self.activation_last == 'relu':
+            x = F.relu(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 
 

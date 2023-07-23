@@ -12,7 +12,7 @@ Default:
   decoder_layer: 2
   decoder_n_hidden: 48
   intra_weight: 0.75
-  seed: 42
+  seed: 0
 
   momentum_factor: 0.999
   nce_k: 16382
@@ -20,12 +20,12 @@ Default:
   pre_dropout: 0.0
 
 
-  cos_bath_size: 10000
+  cos_batch_size: 10000
 
   fsim_norm: True
   fsim_weight: 0.0
   rm_ratio: 0.0
-  add_ratio: 0.0
+  add_ratio: 0.25
 
   cla_batch_size: 5000
   lr: 0.01

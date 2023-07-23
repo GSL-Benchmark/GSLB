@@ -10,14 +10,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 from easydict import EasyDict as edict
 from gensim.models import Word2Vec
+from ogb.nodeproppred import Evaluator
 from scipy.sparse import coo_matrix
 from tqdm import tqdm, trange
 
-from GSL.encoder.gcn import GCN, GCNConv, GCNConv_diag
+from GSL.encoder.gcn import GCN_dgl
 from GSL.encoder.mlp import MLP
 from GSL.metric import InnerProductSimilarity
 from GSL.model import BaseModel
-from GSL.utils import (EarlyStopping, Evaluator, MemoryMoCo, NCESoftmaxLoss,
+from GSL.utils import (EarlyStopping, MemoryMoCo, NCESoftmaxLoss,
                        PolynomialLRDecay, accuracy, edge_lists_to_set,
                        get_cur_time, global_topk, graph_edge_to_lot,
                        load_pickle, min_max_scaling, mkdir_list, moment_update,
@@ -84,17 +85,17 @@ def gen_dw_emb(A, number_walks=10, alpha=0, walk_length=100, window=10, workers=
     return np.array(output)
 
 
-def train_deepwalk(cf, g):
+def train_deepwalk(config, g):
     # g = coo_matrix(g.cpu().numpy())
     # g = dgl.from_scipy(g)
     
-    # g = g.to(cf.device)
+    # g = g.to(config.device)
     adj = g.adj_external(scipy_fmt='coo')
     # adj = g # adj need to be scipy coo sparse matrix
     
-    emb_mat = gen_dw_emb(adj, number_walks=cf.se_num_walks, walk_length=cf.se_walk_length, window=cf.se_window_size,
-                         size=cf.se_n_hidden,
-                         workers=cf.se_num_workers)
+    emb_mat = gen_dw_emb(adj, number_walks=config.se_num_walks, walk_length=config.se_walk_length, window=config.se_window_size,
+                         size=config.se_n_hidden,
+                         workers=config.se_num_workers)
 
     emb_mat = torch.FloatTensor(emb_mat)
     return emb_mat
@@ -183,7 +184,7 @@ class GSR_pretrain(nn.Module):
         input_dim = config.feat_dim[src_view]
         if config.gnn_model == 'GCN':
             # GCN emb should not be dropped out
-            return GCN(input_dim, config.n_hidden, config.n_hidden, 2, config.pre_dropout, 0, False, activation_last=False)
+            return GCN_dgl(input_dim, config.n_hidden, config.n_hidden, 2, config.pre_dropout, 0, activation_last=False, allow_zero_in_degree=True)
             # return TwoLayerGCN(input_dim, config.n_hidden, config.n_hidden, config.activation, config.pre_dropout, is_out_layer=True)
         # if config.gnn_model == 'GAT':
         #     return TwoLayerGAT(input_dim, config.gat_hidden, config.gat_hidden, config.in_head, config.prt_out_head, config.activation, config.pre_dropout, config.pre_dropout,  is_out_layer=True)
@@ -201,7 +202,7 @@ class GSR_pretrain(nn.Module):
             return x[q_nodes] if mode == 'q' else x[k_nodes]
 
         # ! Step 1: Encode node properties to embeddings
-        Z = {src_view: _get_emb(encoder(blocks, input[src_view], stochastic=True))
+        Z = {src_view: _get_emb(encoder(input[src_view], blocks, stochastic=True))
              for src_view, encoder in self.encoder.items()}
         # ! Step 2: Decode embeddings if inter-view
         Z.update({dec: decoder(Z[dec[0]])
@@ -216,7 +217,7 @@ class GSR_pretrain(nn.Module):
         '''
 
         # # ! Get Node Property
-        emb = {_: self.encoder[_](g.to(self.device), feat[_].to(self.device), stochastic=False).detach()
+        emb = {_: self.encoder[_](feat[_].to(self.device), g.to(self.device), ).detach()
                for _ in self.views}
         edges = set(graph_edge_to_lot(g))
         rm_num, add_num = [int(float(_) * self.g.num_edges())
@@ -270,7 +271,7 @@ class GSR_finetune(nn.Module):
         init_random_state(config.seed)
         if config.dataset != 'arxiv':
             if config.gnn_model == 'GCN':
-                return GCN(config.n_fea, config.n_hidden, config.n_hidden, 2, config.pre_dropout, 0, False, activation_last=False)
+                self.gnn = GCN_dgl(config.n_feat, config.n_hidden, config.n_hidden, 2, config.pre_dropout, 0, activation_last=False, allow_zero_in_degree=True)
 
                 # self.gnn = TwoLayerGCN(config.n_feat, config.n_hidden, config.n_class, config.activation, config.dropout, is_out_layer=True)
             # if config.gnn_model == 'GAT':
@@ -283,7 +284,7 @@ class GSR_finetune(nn.Module):
             #     self.gnn = TwoLayerGCNII(config.n_feat, config.n_hidden, config.n_class, config.activation, config.dropout, config.alpha, config.lda,  is_out_layer=True)
         else:
             if config.gnn_model == 'GCN':
-                self.gnn = GCN(config.n_feat, config.n_hidden, config.n_class, 3, config.pre_dropout, 0, False, activation_last=False, bn=True)
+                self.gnn = GCN_dgl(config.n_feat, config.n_hidden, config.n_class, 3, config.pre_dropout, 0, bn=True, allow_zero_in_degree=True)
             #     # self.gnn = ThreeLayerGCN_BN(config.n_feat, config.n_hidden, config.n_class, config.activation, config.dropout)
             # if config.gnn_model == 'GAT':
             #     raise NotImplementedError
@@ -296,7 +297,7 @@ class GSR_finetune(nn.Module):
 
 
     def forward(self, g, x):
-        return self.gnn(g, x)
+        return self.gnn(x, g)
 
 
 # @time_logger
@@ -312,9 +313,9 @@ def get_structural_feature(g, config):
         print(f'Embedding file {config.structural_em_file} not exist, start training')
         if config.semb == 'dw':
             config.load_device = torch.device('cpu')
-            dw_cf = SEConfig(config)
-            dw_cf.device = torch.device("cuda:0") if config.gpu >= 0 else torch.device('cpu')
-            emb = train_deepwalk(dw_cf, g).to(config.device)
+            dw_config = SEConfig(config)
+            dw_config.device = torch.device("cuda:0") if config.gpu >= 0 else torch.device('cpu')
+            emb = train_deepwalk(dw_config, g).to(config.device)
         else:
             raise ValueError
 
@@ -339,14 +340,16 @@ def get_pretrain_loader(g, config):
     # Create sampler
     sampler = dgl.dataloading.MultiLayerNeighborSampler(
         [int(fanout) for fanout in config.fan_out.split('_')])
-    return dgl.dataloading.EdgeDataLoader(
-        g.cpu(), train_seeds, sampler, exclude='reverse_id',
-        reverse_eids=reverse_eids,
-        batch_size=config.p_batch_size,
-        shuffle=True,
-        drop_last=True,
-        pin_memory=True,
-        num_workers=config.num_workers)
+    # return dgl.dataloading.EdgeDataLoader(
+    #     g.cpu(), train_seeds, sampler, exclude='reverse_id',
+    #     reverse_eids=reverse_eids,
+    #     batch_size=config.p_batch_size,
+    #     shuffle=True,
+    #     drop_last=True,
+    #     pin_memory=True,
+    #     num_workers=config.num_workers)
+    sampler = dgl.dataloading.as_edge_prediction_sampler(sampler, exclude='reverse_id', reverse_eids=reverse_eids)
+    return dgl.dataloading.DataLoader(g, train_seeds, sampler, batch_size=config.p_batch_size, shuffle=True, drop_last=True, num_workers=config.num_workers)
 
 
 def write_nested_dict(d, f_path):
@@ -355,6 +358,8 @@ def write_nested_dict(d, f_path):
             if isinstance(d[key], dict):
                 f.write(str(d[key]) + '\n')
 
+    if not os.path.exists(os.path.dirname(f_path)):
+        os.makedirs(os.path.dirname(f_path))
     with open(f_path, 'a+') as f:
         f.write('\n')
         _write_dict(d, f)
@@ -368,13 +373,13 @@ def get_stochastic_loader(g, train_nids, batch_size, num_workers):
         drop_last=False,
         num_workers=num_workers)
 
-def save_results(cf, res_dict):
-    print(f'\nTrain seed{cf.seed} finished\nResults:{res_dict}\nConfig: {cf}')
-    res_dict = {'parameters': cf.model_conf, 'res': res_dict}
-    write_nested_dict(res_dict, cf.res_file)
+def save_results(config, res_dict):
+    print(f'\nTrain seed{config.seed} finished\nResults:{res_dict}\nConfig: {config}')
+    res_dict = {'parameters': config.model_conf, 'res': res_dict}
+    write_nested_dict(res_dict, config.res_file)
 
 class NodeClassificationTrainer(metaclass=ABCMeta):
-    def __init__(self, model, g, features, optimizer, stopper, loss_func, sup, cf):
+    def __init__(self, model, g, features, optimizer, stopper, loss_func, sup, config):
         self.trainer = None
         self.model = model
         self.g = g.cpu()
@@ -382,14 +387,14 @@ class NodeClassificationTrainer(metaclass=ABCMeta):
         self.optimizer = optimizer
         self.stopper = stopper
         self.loss_func = loss_func
-        self.cf = cf
-        self.device = cf.device
-        self.epochs = cf.epochs
-        self.n_class = cf.n_class
+        self.config = config
+        self.device = config.device
+        self.epochs = config.epochs
+        self.n_class = config.n_class
         self.__dict__.update(sup.__dict__)
         self.train_x, self.val_x, self.test_x = \
-            [_.to(cf.device) for _ in [sup.train_x, sup.val_x, sup.test_x]]
-        self.labels = sup.labels.to(cf.device)
+            [_.to(config.device) for _ in [sup.train_x, sup.val_x, sup.test_x]]
+        self.labels = sup.labels.to(config.device)
         self._evaluator = Evaluator(name='ogbn-arxiv')
         self.evaluator = lambda pred, labels: self._evaluator.eval(
             {"y_pred": pred.argmax(dim=-1, keepdim=True), "y_true": labels.view(-1, 1)}
@@ -405,10 +410,10 @@ class NodeClassificationTrainer(metaclass=ABCMeta):
 
     def run(self):
         for epoch in range(self.epochs):
-            t0 = time()
+            t0 = time.time()
             loss, train_acc = self._train()
             val_acc, test_acc = self._evaluate()
-            print_log({'Epoch': epoch, 'Time': time() - t0, 'loss': loss,
+            print_log({'Epoch': epoch, 'Time': time.time() - t0, 'loss': loss,
                        'TrainAcc': train_acc, 'ValAcc': val_acc, 'TestAcc': test_acc})
             if self.stopper is not None:
                 if self.stopper.step(val_acc, self.model, epoch):
@@ -422,7 +427,7 @@ class NodeClassificationTrainer(metaclass=ABCMeta):
         val_acc, test_acc = self._evaluate()
         res = {'test_acc': f'{test_acc:.4f}', 'val_acc': f'{val_acc:.4f}'}
         if self.stopper is not None: res['best_epoch'] = self.stopper.best_epoch
-        save_results(self.cf, res)
+        save_results(self.config, res)
 
 class FullBatchTrainer(NodeClassificationTrainer):
     def __init__(self, **kwargs):
@@ -447,7 +452,8 @@ class FullBatchTrainer(NodeClassificationTrainer):
         val_acc = self.evaluator(logits[self.val_x], self.labels[self.val_x])
         test_acc = self.evaluator(logits[self.test_x], self.labels[self.test_x])
         return val_acc, test_acc
-    
+
+
 class GSR(BaseModel):
     def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, params):
         super(GSR, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device, params)
@@ -511,8 +517,49 @@ class GSR(BaseModel):
             f"_dec-l{self.config.decoder_layer}_hidden{self.config.decoder_n_hidden}-prt_intra_w-{self.config.intra_weight}_ncek{self.config.nce_k}_fanout{self.config.fan_out}_prdo{self.config.pre_dropout}_act_{self.config.activation}_d{self.config.n_hidden}_pdl{self.config.poly_decay_lr}_sek{self.confg.se_k}"
         self.config.model_conf = self.config
         self.config.pretrain_model_ckpt = f"{TEMP_PATH}{self.config.model}/p_model_ckpts/{self.config.dataset}/{self.config.pretrain_conf}.ckpt"
-        
-    
+        FEConfig_dict = {
+            'cora': {
+                'lr': 0.001,
+                'epochs': 100,
+                'dropout': 0.8,
+                'aggregator': 'gcn',
+            },
+            'citeseer': {
+                'lr': 0.001,
+                'epochs': 100,
+                'dropout': 0.5,
+                'aggregator': 'gcn',
+            },
+            'pubmed': {
+                'lr': 0.005,
+                'epochs': 3,
+                'dropout': 0.5,
+                'aggregator': 'gcn',
+            },
+        }
+        dataset_config = FEConfig_dict[self.config.dataset]
+        self.config.fe_lr = dataset_config['lr']
+        self.config.fe_epochs = dataset_config['epochs']
+        self.config.fe_dropout = dataset_config['dropout']
+        self.config.fe_aggregator = dataset_config['aggregator']
+        self.config.fe_layer = 2
+        self.config.fe_hidden = 64
+        self.config.fe_num_negs = 1
+        self.config.fe_batch_size = 10000
+        self.config.fe_early_stop = 100
+        self.config.fe_train_percentage = 0
+        # ! Oconfig.ther settings
+        self.config.fe_neg_share = False
+        # selconfig.f.fe_fan_out = '25,50'
+        self.config.fe_fan_out = '25'
+        self.config.num_workers = 2
+        self.config.fe_weight_decay = 5e-4
+        self.config.finetune_conf = f"lr{self.config.lr}_GCN-do{self.config.dropout}"
+        self.config.graph_refine_conf = f'fsim_norm{int(self.config.fsim_norm)}_fsim_weight{self.config.fsim_weight}_add{self.config.add_ratio}_rm{self.config.rm_ratio}'
+        self.config.f_prefix = f"l{self.config.train_percentage}_PR-{self.config.pretrain_conf}-_GR-{self.config.graph_refine_conf}_{self.config.finetune_conf}"
+        self.config.checkpoint_file = f"{TEMP_PATH}{self.config.model}/f_model_ckpts/{self.config.dataset}/{self.config.f_prefix}.ckpt"
+        self.config.res_file = f'{RES_PATH}{self.config.model}/{self.config.dataset}/l{self.config.train_percentage:02d}/{self.config.f_prefix}.txt'
+        self.config.refined_graph_file = f'{TEMP_PATH}{self.config.model}/refined_graphs/{self.config.dataset}/PR-{self.config.pretrain_conf}_GR-{self.config.graph_refine_conf}.bin'
     
     def fit(self, dataset, split_num=0):
         adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
@@ -536,17 +583,23 @@ class GSR(BaseModel):
         else:
             adj += torch.eye(adj.shape[0]).to(self.device)
             adj = adj.to_sparse()
-        edge = adj.to_dense().nonzero().t().cpu()
+        edge = adj.to_dense().nonzero().cpu()
         U = [e[0] for e in edge]
         V = [e[1] for e in edge]
         g = dgl.graph((U, V))
         g = dgl.to_simple(g)
         g = dgl.remove_self_loop(g)
         g = dgl.to_bidirected(g)
+        # g = dgl.add_self_loop(g)
+        if self.config.dataset == 'citeseer':
+            g = dgl.add_self_loop(g)
+        self.config.n_feat = features.shape[1]
+        self.config.n_class = labels.max().item() + 1
         
         feat = {'F': features, 'S': get_structural_feature(g, self.config)}
         self.config.feat_dim = {v: feat.shape[1] for v, feat in feat.items()}
-        supervision = edict({'train_mask': train_mask, 'val_mask': val_mask, 'test_mask': test_mask, 'labels': labels})
+        train_x, val_x, test_x = [torch.where(_)[0] for _ in [train_mask, val_mask, test_mask]]
+        supervision = edict({'train_x': train_x, 'val_x': val_x, 'test_x': test_x, 'labels': labels})
         print(f'{self.config}\nStart training..')
         p_model = GSR_pretrain(g, self.config).to(self.config.device)
         # print(p_model)
@@ -576,7 +629,7 @@ class GSR(BaseModel):
 
                 for epoch_id in range(self.config.p_epochs):
                     for step, (input_nodes, edge_subgraph, blocks) in enumerate(pretrain_loader):
-                        t0 = time()
+                        t0 = time.time()
                         blocks = [b.to(self.config.device) for b in blocks]
                         edge_subgraph = edge_subgraph.to(self.config.device)
                         input_feature = {v: feat[v][input_nodes].to(self.config.device) for v in views}
@@ -620,7 +673,7 @@ class GSR(BaseModel):
                         optimizer.step()
 
                         moment_update(p_model, p_model_ema, self.config.momentum_factor)
-                        print_log({'Epoch': epoch_id, 'Batch': step, 'Time': time() - t0,
+                        print_log({'Epoch': epoch_id, 'Batch': step, 'Time': time.time() - t0,
                                 'intra_loss': intra_loss.item(), 'inter_loss': inter_loss.item(),
                                 'overall_loss': loss.item()})
 
@@ -631,6 +684,8 @@ class GSR(BaseModel):
                     if epoch_id + 1 in epochs_to_save:
                         # Convert from p_epochs to current p_epoch checkpoint
                         ckpt_name = self.config.pretrain_model_ckpt.replace(f'_pi{self.config.p_epochs}', f'_pi{epoch_id + 1}')
+                        if not os.path.exists(os.path.dirname(ckpt_name)):
+                            os.makedirs(os.path.dirname(ckpt_name))
                         torch.save(p_model.state_dict(), ckpt_name)
                         print(f'Model checkpoint {ckpt_name} saved.')
 
