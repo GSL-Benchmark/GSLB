@@ -646,7 +646,7 @@ class GSR(BaseModel):
 
                         q_emb = p_model(edge_subgraph, blocks, input_feature, mode='q')
                         std_dict = {v: round(q_emb[v].std(dim=0).mean().item(), 4) for v in ['F', 'S']}
-                        print(f"Std: {std_dict}")
+                        # print(f"Std: {std_dict}")
 
                         if std_dict['F'] == 0 or std_dict['S'] == 0:
                             print(f'\n\n????!!!! Same Embedding Epoch={epoch_id}Step={step}\n\n')
@@ -680,9 +680,9 @@ class GSR(BaseModel):
                         optimizer.step()
 
                         moment_update(p_model, p_model_ema, self.config.momentum_factor)
-                        print_log({'Epoch': epoch_id, 'Batch': step, 'Time': time.time() - t0,
-                                'intra_loss': intra_loss.item(), 'inter_loss': inter_loss.item(),
-                                'overall_loss': loss.item()})
+                        # print_log({'Epoch': epoch_id, 'Batch': step, 'Time': time.time() - t0,
+                        #         'intra_loss': intra_loss.item(), 'inter_loss': inter_loss.item(),
+                        #         'overall_loss': loss.item()})
 
                         if self.config.p_schedule_step > 1:
                             scheduler_poly_lr_decay.step()
@@ -729,6 +729,9 @@ class GSR(BaseModel):
                             stopper=stopper, optimizer=optimizer, loss_func=torch.nn.CrossEntropyLoss())
         trainer.run()
         res = trainer.eval_and_save()
+        # delete TEMP_PATH
+        os.system(f'rm -rf {TEMP_PATH}')
+        os.system(f'rm -rf {RES_PATH}')
         self.best_epoch = stopper.best_epoch
         self.best_result = res
 
