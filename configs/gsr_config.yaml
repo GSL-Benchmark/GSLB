@@ -1,0 +1,41 @@
+Default:
+  gnn_model: GCN
+  activation: Relu
+  semb: dw
+  prt_lr: 0.001
+  p_epochs: 50
+  p_batch_size: 512
+  p_schedule_step: 500
+  poly_decay_lr: True
+  fan_out: '20_40'
+  num_workers: 0
+  decoder_layer: 2
+  decoder_n_hidden: 48
+  intra_weight: 0.75
+  seed: 0
+
+  momentum_factor: 0.999
+  nce_k: 16382
+  nce_t: 0.07
+  pre_dropout: 0.0
+
+
+  cos_batch_size: 10000
+
+  fsim_norm: True
+  fsim_weight: 0.0
+  rm_ratio: 0.0
+  add_ratio: 0.25
+
+  cla_batch_size: 5000
+  lr: 0.01
+  dropout: 0.5
+  n_hidden: 256
+
+  weight_decay: 5.e-4
+  early_stop: 100
+  epochs: 1000
+
+  train_percentage: 0
+  gpu: 0
+  

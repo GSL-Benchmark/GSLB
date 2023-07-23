@@ -17,6 +17,7 @@ class BaseModel(nn.Module):
         self.metric = metric
         self.device = device
         self.load_config(config_path, dataset, params)
+        self.config.device = device
 
     def check_adj(self, adj):
         """
@@ -40,6 +41,7 @@ class BaseModel(nn.Module):
         if dataset_config is not None:
             config.update(dataset_config)
         self.config = config
+        self.config.dataset = dataset
         self.load_hypers(params)
 
     def load_hypers(self, params):

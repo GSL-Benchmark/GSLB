@@ -13,8 +13,8 @@ from GSL.encoder import GAT, GCN, GraphSAGE
 from GSL.metric import *
 from GSL.model import BaseModel
 from GSL.processor import Normalize, ThresholdSparsify
-from GSL.utils import (AverageMeter, DummyLogger, SquaredFrobeniusNorm,
-                       accuracy, diff, row_normalize_features, to_scipy)
+from GSL.utils import (AverageMeter, SquaredFrobeniusNorm, accuracy, diff,
+                       row_normalize_features, to_scipy)
 
 VERY_SMALL_NUMBER = 1e-12
 _SAVED_WEIGHTS_FILE = "params.saved"
