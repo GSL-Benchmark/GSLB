@@ -428,6 +428,7 @@ class NodeClassificationTrainer(metaclass=ABCMeta):
         res = {'test_acc': f'{test_acc:.4f}', 'val_acc': f'{val_acc:.4f}'}
         if self.stopper is not None: res['best_epoch'] = self.stopper.best_epoch
         save_results(self.config, res)
+        return test_acc
 
 class FullBatchTrainer(NodeClassificationTrainer):
     def __init__(self, **kwargs):
@@ -721,9 +722,11 @@ class GSR(BaseModel):
         trainer = trainer_func(model=f_model, g=g_new, features=features, sup=supervision, config=self.config,
                             stopper=stopper, optimizer=optimizer, loss_func=torch.nn.CrossEntropyLoss())
         trainer.run()
-        trainer.eval_and_save()
+        res = trainer.eval_and_save()
+        self.best_epoch = stopper.best_epoch
+        self.best_result = res
 
-        return self.config
+        return self.best_result
             
 def scalable_graph_refine(g, emb, rm_num, add_num, batch_size, fsim_weight, device, norm=False):
     def _update_topk(sim, start, mask, k, prev_inds, prev_sim, largest):
