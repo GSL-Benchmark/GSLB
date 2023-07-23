@@ -22,7 +22,8 @@ from GSL.utils import (EarlyStopping, MemoryMoCo, NCESoftmaxLoss,
                        PolynomialLRDecay, accuracy, edge_lists_to_set,
                        get_cur_time, global_topk, graph_edge_to_lot,
                        load_pickle, min_max_scaling, mkdir_list, moment_update,
-                       para_copy, save_pickle, time2str, time_logger)
+                       mx_normalize_features, para_copy, save_pickle, time2str,
+                       time_logger)
 
 P_EPOCHS_SAVE_LIST = [1, 2, 3, 5, 10, 20, 30, 40, 50, 100, 150, 200, 250, 300]
 
@@ -151,8 +152,11 @@ def cosine_similarity_n_space(m1=None, m2=None, dist_batch_size=100):
 
 
 def print_log(log_dict):
-    log_ = lambda log: f'{log:.4f}' if isinstance(log, float) else f'{log:04d}'
-    print(' | '.join([f'{k} {log_(v)}' for k, v in log_dict.items()]))
+    print(f'Epoch: {log_dict["Epoch"]}, '
+          f'Loss: {log_dict["loss"]:.4f}, '
+          f'Train: {100 * log_dict["TrainAcc"]:.2f}%, '
+          f'Valid: {100 * log_dict["ValAcc"]:.2f}%, '
+          f'Test: {100 * log_dict["TestAcc"]:.2f}%')
 
 
 class GSR_pretrain(nn.Module):
@@ -160,7 +164,7 @@ class GSR_pretrain(nn.Module):
         # ! Initialize variabless
         super(GSR_pretrain, self).__init__()
         self.__dict__.update(config.model_conf)
-        init_random_state(config.seed)
+        # init_random_state(config.seed)
         self.device = config.device
         self.g = g
 
@@ -268,7 +272,7 @@ class GSR_finetune(nn.Module):
         # ! Initialize variables
         super(GSR_finetune, self).__init__()
         self.__dict__.update(config.model_conf)
-        init_random_state(config.seed)
+        # init_random_state(config.seed)
         if config.dataset != 'arxiv':
             if config.gnn_model == 'GCN':
                 self.gnn = GCN_dgl(config.n_feat, config.n_hidden, config.n_hidden, 2, config.pre_dropout, 0, activation_last=False, allow_zero_in_degree=True)
@@ -374,7 +378,7 @@ def get_stochastic_loader(g, train_nids, batch_size, num_workers):
         num_workers=num_workers)
 
 def save_results(config, res_dict):
-    print(f'\nTrain seed{config.seed} finished\nResults:{res_dict}\nConfig: {config}')
+    print(f'\nTrain finished\nResults:{res_dict}\nConfig: {config}')
     res_dict = {'parameters': config.model_conf, 'res': res_dict}
     write_nested_dict(res_dict, config.res_file)
 
@@ -420,7 +424,7 @@ class NodeClassificationTrainer(metaclass=ABCMeta):
                     print(f'Early stopped, loading model from epoch-{self.stopper.best_epoch}')
                     break
         if self.stopper is not None:
-            self.model.load_state_dict(torch.load(self.stopper.path))
+            self.model.load_state_dict(self.stopper.best_weight)
         return self.model
 
     def eval_and_save(self):
@@ -584,6 +588,8 @@ class GSR(BaseModel):
         else:
             adj += torch.eye(adj.shape[0]).to(self.device)
             adj = adj.to_sparse()
+        features = mx_normalize_features(features.cpu())
+        features = torch.FloatTensor(features)
         edge = adj.to_dense().nonzero().cpu()
         U = [e[0] for e in edge]
         V = [e[1] for e in edge]

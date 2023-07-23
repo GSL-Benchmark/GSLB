@@ -453,7 +453,6 @@ class EarlyStopping:
             self.best_score = score
             self.best_epoch = epoch
             self.best_weight = deepcopy(model.state_dict())
-            self.save_checkpoint(model)
         elif score < self.best_score:
             self.counter += 1
             print(
@@ -465,17 +464,9 @@ class EarlyStopping:
             self.best_score = score
             self.best_epoch = epoch
             self.best_weight = deepcopy(model.state_dict())
-            self.save_checkpoint(model)
             self.counter = 0
 
         return self.early_stop
-
-    def save_checkpoint(self, model):
-        """Saves model when validation loss decrease."""
-        if self.path is not None:
-            if not os.path.exists(os.path.dirname(self.path)):
-                os.makedirs(os.path.dirname(self.path))
-                torch.save(model.state_dict(), self.path)
 
 def true_positive(pred, target, n_class):
     return torch.tensor([((pred == i) & (target == i)).sum() for i in range(n_class)])
@@ -611,6 +602,16 @@ def row_normalize_features(features):
         features = r_mat_inv.dot(features)
     return features
 
+
+def mx_normalize_features(mx):
+    """Row-normalize sparse matrix"""
+    rowsum = np.array(mx.sum(1))
+    r_inv = np.power(rowsum, -1).flatten()
+    r_inv[np.isinf(r_inv)] = 0.
+    r_mat_inv = sp.diags(r_inv)
+    mx = r_mat_inv.dot(mx)
+    return mx
+    
 
 def dense_adj_to_edge_index(adj):
     edge_index = sp.coo_matrix(adj.cpu())
