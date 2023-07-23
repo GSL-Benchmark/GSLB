@@ -15,9 +15,7 @@ Default:
   nlayers: 2
   nlayers_adj: 2
   patience: 10
-  ntrials: 1
   k: 20
-  half_val_as_train: 0
   ratio: 20
   epoch_d: 5
   lambda_: 0.1
@@ -29,7 +27,6 @@ Default:
   mlp_act: relu
   normalization: sym
   mlp_h: 50
-  mlp_epochs: 100
   gen_mode: 0
   sparse: 0
   noise: mask
@@ -37,7 +34,6 @@ Default:
 
 cora:
   dataset: cora
-  ntrials: 1
   epochs_adj: 2000
   lr: 0.01
   lr_adj: 0.001
@@ -64,7 +60,6 @@ cora:
 
 citeseer:
   dataset: citeseer
-  ntrials: 1
   epochs_adj: 2000
   lr: 0.01
   lr_adj: 0.001
@@ -91,7 +86,6 @@ citeseer:
 
 pubmed:
   dataset: pubmed
-  ntrials: 1
   epochs_adj: 2000
   lr: 0.01
   lr_adj: 0.01
@@ -118,7 +112,6 @@ pubmed:
 
 ogbn-arxiv:
   dataset: ogbn-arxiv
-  ntrials: 1
   epochs_adj: 2000
   lr: 0.01
   lr_adj: 0.001
@@ -147,7 +140,6 @@ ogbn-arxiv:
 
 cornell:
   dataset: cornell
-  ntrials: 1
   epochs_adj: 2000
   lr: 0.01
   lr_adj: 0.001
@@ -168,13 +160,12 @@ cornell:
   sparse: 0
   gen_mode: 1
   non_linearity: relu
-  mlp_h: 1433
+  mlp_h: 1703
   mlp_act: relu
   epoch_d: 5
 
 actor:
   dataset: actor
-  ntrials: 1
   epochs_adj: 2000
   lr: 0.01
   lr_adj: 0.001
@@ -195,13 +186,12 @@ actor:
   sparse: 0
   gen_mode: 1
   non_linearity: relu
-  mlp_h: 1433
+  mlp_h: 932
   mlp_act: relu
   epoch_d: 5
 
 texas:
   dataset: texas
-  ntrials: 1
   epochs_adj: 2000
   lr: 0.01
   lr_adj: 0.001
@@ -222,13 +212,12 @@ texas:
   sparse: 0
   gen_mode: 1
   non_linearity: relu
-  mlp_h: 1433
+  mlp_h: 1703
   mlp_act: relu
   epoch_d: 5
 
 wisconsin:
   dataset: wisconsin
-  ntrials: 1
   epochs_adj: 2000
   lr: 0.01
   lr_adj: 0.001
@@ -249,13 +238,12 @@ wisconsin:
   sparse: 0
   gen_mode: 1
   non_linearity: relu
-  mlp_h: 1433
+  mlp_h: 1703
   mlp_act: relu
   epoch_d: 5
 
 chameleon:
   dataset: chameleon
-  ntrials: 1
   epochs_adj: 2000
   lr: 0.01
   lr_adj: 0.001
@@ -282,7 +270,6 @@ chameleon:
 
 squirrel:
   dataset: squirrel
-  ntrials: 1
   epochs_adj: 2000
   lr: 0.01
   lr_adj: 0.001

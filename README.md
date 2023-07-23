@@ -68,6 +68,8 @@ Optional arguments:
 
 ``--add_rate`` : the probability of randomly edge addition
 
+``--mask_feat_rate`` : the probability of randomly mask features
+
 ``--use_mettack`` : whether to use the structure after being attacked by mettack
 
 ``--ptb_rate -p`` : the perturbation rate

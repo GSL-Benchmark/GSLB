@@ -26,7 +26,8 @@ class MLPLearner(BaseLearner):
 
     def param_init(self):
         for layer in self.layers:
-            layer.reset_parameters()
+            # layer.reset_parameters()
+            layer.weight = nn.Parameter(torch.eye(self.in_dim))
 
     def internal_forward(self, x):
         for i, layer in enumerate(self.layers):

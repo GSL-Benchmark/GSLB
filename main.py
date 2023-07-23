@@ -19,6 +19,8 @@ if __name__ == '__main__':
                         help='the probability of randomly drop edges')
     parser.add_argument('--add_rate', type=float, default=0.,
                         help='the probability of randomly add edges')
+    parser.add_argument('--mask_feat_rate', type=float, default=0.,
+                        help='the probability of randomly mask features')
     parser.add_argument('--use_mettack', action='store_true',
                         help='whether to use the structure after being attacked by mettack')
     parser.add_argument('--ptb_rate', type=float, default=0.,
@@ -41,6 +43,6 @@ if __name__ == '__main__':
     exp = Experiment(model_name=args.model, dataset=args.dataset, ntrail=args.ntrail,
                      data_path=data_path, config_path=config_path, metric=args.metric, sparse=args.sparse,
                      use_knn=args.use_knn, k=args.k, drop_rate=args.drop_rate, gpu_num=args.gpu_num,
-                     add_rate=args.add_rate, use_mettack=args.use_mettack, ptb_rate=args.ptb_rate)
+                     add_rate=args.add_rate, use_mettack=args.use_mettack, ptb_rate=args.ptb_rate, mask_feat_rate=args.mask_feat_rate)
     exp.run()
     # exp.hp_search("hyperparams/idgl_hyper.yaml")
