@@ -13,7 +13,7 @@ from GSL.encoder import *
 from GSL.model import *
 from GSL.utils import (accuracy, get_knn_graph, macro_f1, micro_f1,
                        random_add_edge, random_drop_edge, seed_everything,
-                       sparse_mx_to_torch_sparse_tensor)
+                       sparse_mx_to_torch_sparse_tensor, feature_mask, apply_feature_mask)
 
 
 class Experiment(object):
@@ -27,6 +27,7 @@ class Experiment(object):
                  k: int = 5,
                  drop_rate: float = 0.,
                  add_rate: float = 0.,
+                 mask_feat_rate: float = 0.,
                  use_mettack: bool = False,
                  ptb_rate: float = 0.05
                  ):
@@ -61,8 +62,8 @@ class Experiment(object):
             adj = self.data.adj
             features = self.data.features
 
-            # mask = feature_mask(features, 0.8)
-            # apply_feature_mask(features, mask)
+            mask = feature_mask(features, mask_feat_rate)
+            apply_feature_mask(features, mask)
 
             # Randomly drop edges
             if drop_rate > 0:
