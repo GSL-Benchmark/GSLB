@@ -381,9 +381,14 @@ class Dataset:
         self.features = self.features.to(device)
         self.adj = self.adj.to(device)
         self.labels = self.labels.to(device)
-        self.train_mask = self.train_mask.to(device)
-        self.val_mask = self.val_mask.to(device)
-        self.test_mask = self.test_mask.to(device)
+        try:
+            self.train_mask = self.train_mask.to(device)
+            self.val_mask = self.val_mask.to(device)
+            self.test_mask = self.test_mask.to(device)
+        except:
+            self.train_masks = [self.train_masks[i].to(device) for i in range(10)]
+            self.val_masks = [self.val_masks[i].to(device) for i in range(10)]
+            self.test_masks = [self.test_masks[i].to(device) for i in range(10)]
         return self
 
     def download(self, name, url):
