@@ -19,12 +19,12 @@ from GSL.metric import InnerProductSimilarity, CosineSimilarity
 from GSL.processor import KNNSparsify, kneighbors_graph, KNearestNeighbour
 
 
-def get_mask(idx):
+def get_mask(idx, labels):
     mask = np.zeros(labels.shape[0], dtype=np.bool)
     mask[idx] = 1
     return mask
 
-def get_y(idx):
+def get_y(idx, labels):
     mx = np.zeros(labels.shape)
     mx[idx] = labels[idx]
     return mx
@@ -518,9 +518,9 @@ class Dataset:
         test_idx_list = [torch.where(test_mask)[0] for test_mask in test_masks]
 
         l = self.onehot(labels)
-        self.train_masks = [torch.BoolTensor(get_mask(train_idx)) for train_idx in train_idx_list]
-        self.val_masks = [torch.BoolTensor(get_mask(val_idx)) for val_idx in val_idx_list]
-        self.test_masks = [torch.BoolTensor(get_mask(test_idx)) for test_idx in test_idx_list]
+        self.train_masks = [torch.BoolTensor(get_mask(train_idx, labels)) for train_idx in train_idx_list]
+        self.val_masks = [torch.BoolTensor(get_mask(val_idx, labels)) for val_idx in val_idx_list]
+        self.test_masks = [torch.BoolTensor(get_mask(test_idx, labels)) for test_idx in test_idx_list]
         return adj, features, labels
 
     def __repr__(self):
