@@ -31,14 +31,10 @@ if __name__ == '__main__':
                         help='whether to use sparse version')
     parser.add_argument('--gpu_num', type=int, default=0,
                         help='the selected GPU number')
-    parser.add_argument('--learner', type=str, default='MLP', choices=['FP', 'MLP'],
-                        help='the learner of SLAPS')
     args = parser.parse_args()
 
     data_path = osp.join(osp.expanduser('~'), 'datasets')
     config_path = './configs/{}_config.yaml'.format(args.model.lower())
-    if args.model.lower() == 'slaps':
-        config_path = './configs/{}_{}_config.yaml'.format(args.model.lower(), args.learner.lower())
 
     exp = Experiment(model_name=args.model, dataset=args.dataset, ntrail=args.ntrail,
                      data_path=data_path, config_path=config_path, metric=args.metric, sparse=args.sparse,
