@@ -21,7 +21,7 @@ class SLAPS(BaseModel):
                          features=features.cpu(), k=self.config.k, knn_metric=self.config.knn_metric, i_=self.config.i,
                          non_linearity=self.config.non_linearity, normalization=self.config.normalization,
                          mlp_h=self.config.mlp_h,
-                         gen_mode=self.config.gen_mode, sparse=self.config.sparse,
+                         learner=self.config.learner, sparse=self.config.sparse,
                          mlp_act=self.config.mlp_act).to(device)
         self.model2 = GCN_C(in_channels=num_features, hidden_channels=self.config.hidden, out_channels=num_classes,
                        num_layers=self.config.nlayers, dropout=self.config.dropout2,
@@ -125,7 +125,7 @@ class SLAPS(BaseModel):
 
 class GCN_DAE(nn.Module):
     def __init__(self, config, nlayers, in_dim, hidden_dim, num_classes, dropout, dropout_adj, features, k, knn_metric, i_,
-                 non_linearity, normalization, mlp_h, gen_mode, sparse, mlp_act):
+                 non_linearity, normalization, mlp_h, learner, sparse, mlp_act):
         super(GCN_DAE, self).__init__()
 
         self.layers = nn.ModuleList()
@@ -154,12 +154,13 @@ class GCN_DAE(nn.Module):
         self.mlp_h = mlp_h
         self.sparse = sparse
 
-        if gen_mode == 0:
+        print('Graph Structure Learner: {}'.format(learner))
+        if learner == 'FP':
             metric = CosineSimilarity()
             processors = [KNNSparsify(k), Discretize(), LinearTransform(config.i)]
             non_linearize = NonLinearize(config.non_linearity, alpha=config.i)
             self.graph_gen = FullParam(metric, processors, features, sparse, non_linearize)
-        elif gen_mode == 1:
+        elif learner == 'MLP':
             metric = CosineSimilarity()
             processors = [KNNSparsify(k)]
             activation = ({'relu': F.relu, 'prelu': F.prelu, 'tanh': F.tanh})[mlp_act]

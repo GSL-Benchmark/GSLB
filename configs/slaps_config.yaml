@@ -27,7 +27,7 @@ Default:
   mlp_act: relu
   normalization: sym
   mlp_h: 50
-  gen_mode: 0
+  learner: MLP  # Graph Structure Learner, choices: ['FP', 'MLP']
   sparse: 0
   noise: mask
   loss: mse
@@ -35,8 +35,8 @@ Default:
 cora:
   dataset: cora
   epochs_adj: 2000
-  lr: 0.001
-  lr_adj: 0.01
+  lr: 0.01
+  lr_adj: 0.001
   w_decay: 0.0005
   nlayers: 2
   nlayers_adj: 2
@@ -44,40 +44,44 @@ cora:
   hidden_adj: 512
   dropout1: 0.5
   dropout2: 0.5
-  dropout_adj1: 0.5
-  dropout_adj2: 0.25
-  k: 30
+  dropout_adj1: 0.25
+  dropout_adj2: 0.5
+  k: 20
   lambda_: 10.0
   nr: 5
   ratio: 10
   model: end2end
   sparse: 0
-  gen_mode: 0
-  non_linearity: elu
+  learner: MLP
+  non_linearity: relu
+  mlp_h: 1433
+  mlp_act: relu
   epoch_d: 5
 
 citeseer:
   dataset: citeseer
   epochs_adj: 2000
   lr: 0.01
-  lr_adj: 0.01
-  w_decay: 0.05
+  lr_adj: 0.001
+  w_decay: 0.0005
   nlayers: 2
   nlayers_adj: 2
   hidden: 32
   hidden_adj: 1024
   dropout1: 0.5
   dropout2: 0.5
-  dropout_adj1: 0.4
-  dropout_adj2: 0.4
+  dropout_adj1: 0.25
+  dropout_adj2: 0.5
   k: 30
-  lambda_: 1.0
-  nr: 1
+  lambda_: 10.0
+  nr: 5
   ratio: 10
   model: end2end
   sparse: 0
-  gen_mode: 0
-  non_linearity: elu
+  learner: MLP
+  non_linearity: relu
+  mlp_act: relu
+  mlp_h: 3703
   epoch_d: 5
 
 pubmed:
@@ -89,50 +93,56 @@ pubmed:
   nlayers: 2
   nlayers_adj: 2
   hidden: 32
-  hidden_adj: 512
+  hidden_adj: 128
   dropout1: 0.5
   dropout2: 0.5
   dropout_adj1: 0.5
-  dropout_adj2: 0.25
-  k: 30
+  dropout_adj2: 0.5
+  k: 15
   lambda_: 10.0
   nr: 5
-  ratio: 10
+  ratio: 20
   model: end2end
-  sparse: 0
-  gen_mode: 0
-  non_linearity: elu
+  learner: MLP
+  non_linearity: relu
+  mlp_h: 500
+  mlp_act: relu
   epoch_d: 5
+  sparse: 1
 
 ogbn-arxiv:
   dataset: ogbn-arxiv
   epochs_adj: 2000
-  lr: 0.001
-  lr_adj: 0.01
-  w_decay: 0.0005
+  lr: 0.01
+  lr_adj: 0.001
+  w_decay: 0.0
   nlayers: 2
   nlayers_adj: 2
-  hidden: 32
-  hidden_adj: 512
+  hidden: 256
+  hidden_adj: 256
   dropout1: 0.5
   dropout2: 0.5
-  dropout_adj1: 0.5
-  dropout_adj2: 0.25
-  k: 30
+  dropout_adj1: 0.25
+  dropout_adj2: 0.5
+  k: 15
   lambda_: 10.0
   nr: 5
-  ratio: 10
+  ratio: 100
   model: end2end
+  learner: MLP
+  non_linearity: relu
+  mlp_h: 128
+  mlp_act: relu
+  epoch_d: 2001
   sparse: 1
-  gen_mode: 0
-  non_linearity: elu
-  epoch_d: 5
+  loss: mse
+  noise: mask
 
 cornell:
   dataset: cornell
   epochs_adj: 2000
   lr: 0.01
-  lr_adj: 0.01
+  lr_adj: 0.001
   w_decay: 0.0005
   nlayers: 2
   nlayers_adj: 2
@@ -140,23 +150,25 @@ cornell:
   hidden_adj: 512
   dropout1: 0.5
   dropout2: 0.5
-  dropout_adj1: 0.5
-  dropout_adj2: 0.25
-  k: 30
+  dropout_adj1: 0.25
+  dropout_adj2: 0.5
+  k: 20
   lambda_: 10.0
   nr: 5
   ratio: 10
   model: end2end
   sparse: 0
-  gen_mode: 0
-  non_linearity: elu
+  learner: FP
+  non_linearity: relu
+  mlp_h: 1703
+  mlp_act: relu
   epoch_d: 5
 
 actor:
   dataset: actor
   epochs_adj: 2000
   lr: 0.01
-  lr_adj: 0.01
+  lr_adj: 0.001
   w_decay: 0.0005
   nlayers: 2
   nlayers_adj: 2
@@ -164,23 +176,25 @@ actor:
   hidden_adj: 512
   dropout1: 0.5
   dropout2: 0.5
-  dropout_adj1: 0.5
-  dropout_adj2: 0.25
-  k: 30
+  dropout_adj1: 0.25
+  dropout_adj2: 0.5
+  k: 20
   lambda_: 10.0
   nr: 5
   ratio: 10
   model: end2end
   sparse: 0
-  gen_mode: 0
-  non_linearity: elu
+  learner: MLP
+  non_linearity: relu
+  mlp_h: 932
+  mlp_act: relu
   epoch_d: 5
 
 texas:
   dataset: texas
   epochs_adj: 2000
   lr: 0.01
-  lr_adj: 0.01
+  lr_adj: 0.001
   w_decay: 0.0005
   nlayers: 2
   nlayers_adj: 2
@@ -188,23 +202,25 @@ texas:
   hidden_adj: 512
   dropout1: 0.5
   dropout2: 0.5
-  dropout_adj1: 0.5
-  dropout_adj2: 0.25
-  k: 30
+  dropout_adj1: 0.25
+  dropout_adj2: 0.5
+  k: 20
   lambda_: 10.0
   nr: 5
   ratio: 10
   model: end2end
   sparse: 0
-  gen_mode: 0
-  non_linearity: elu
+  learner: FP
+  non_linearity: relu
+  mlp_h: 1703
+  mlp_act: relu
   epoch_d: 5
 
 wisconsin:
   dataset: wisconsin
   epochs_adj: 2000
   lr: 0.01
-  lr_adj: 0.01
+  lr_adj: 0.001
   w_decay: 0.0005
   nlayers: 2
   nlayers_adj: 2
@@ -212,23 +228,25 @@ wisconsin:
   hidden_adj: 512
   dropout1: 0.5
   dropout2: 0.5
-  dropout_adj1: 0.5
-  dropout_adj2: 0.25
-  k: 30
+  dropout_adj1: 0.25
+  dropout_adj2: 0.5
+  k: 20
   lambda_: 10.0
   nr: 5
   ratio: 10
   model: end2end
   sparse: 0
-  gen_mode: 0
-  non_linearity: elu
+  learner: FP
+  non_linearity: relu
+  mlp_h: 1703
+  mlp_act: relu
   epoch_d: 5
 
 chameleon:
   dataset: chameleon
   epochs_adj: 2000
   lr: 0.01
-  lr_adj: 0.01
+  lr_adj: 0.001
   w_decay: 0.0005
   nlayers: 2
   nlayers_adj: 2
@@ -236,23 +254,25 @@ chameleon:
   hidden_adj: 512
   dropout1: 0.5
   dropout2: 0.5
-  dropout_adj1: 0.5
-  dropout_adj2: 0.25
-  k: 30
+  dropout_adj1: 0.25
+  dropout_adj2: 0.5
+  k: 20
   lambda_: 10.0
   nr: 5
   ratio: 10
   model: end2end
   sparse: 0
-  gen_mode: 0
-  non_linearity: elu
+  learner: MLP
+  non_linearity: relu
+  mlp_h: 1433
+  mlp_act: relu
   epoch_d: 5
 
 squirrel:
   dataset: squirrel
   epochs_adj: 2000
   lr: 0.01
-  lr_adj: 0.01
+  lr_adj: 0.001
   w_decay: 0.0005
   nlayers: 2
   nlayers_adj: 2
@@ -260,14 +280,16 @@ squirrel:
   hidden_adj: 512
   dropout1: 0.5
   dropout2: 0.5
-  dropout_adj1: 0.5
-  dropout_adj2: 0.25
-  k: 30
+  dropout_adj1: 0.25
+  dropout_adj2: 0.5
+  k: 20
   lambda_: 10.0
   nr: 5
   ratio: 10
   model: end2end
   sparse: 0
-  gen_mode: 0
-  non_linearity: elu
+  learner: MLP
+  non_linearity: relu
+  mlp_h: 1433
+  mlp_act: relu
   epoch_d: 5
