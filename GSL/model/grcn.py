@@ -12,8 +12,8 @@ EOS = 1e-10
 
 class GRCN(BaseModel):
     """Graph-Revised Convulutional Network (ECML-PKDD 2020)"""
-    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device):
-        super(GRCN, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, params=None):
+        super(GRCN, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device, params)
         self.num_features = num_features
         self.graph_nhid = int(self.config.hid_graph.split(":")[0])
         self.graph_nhid2 = int(self.config.hid_graph.split(":")[1])

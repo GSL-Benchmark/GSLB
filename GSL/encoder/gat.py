@@ -210,3 +210,7 @@ class GAT_dgl(nn.Module):
             else:  # other layer(s)
                 x = x.flatten(1)
         return x
+
+    def reset_parameters(self):
+        for layer in self.gat_layers:
+            layer.reset_parameters()
