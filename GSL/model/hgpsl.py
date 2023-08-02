@@ -8,9 +8,12 @@ from dgl._sparse_ops import _gsddmm, _gspmm
 from dgl.ops import edge_softmax
 from dgl.backend import astype
 from dgl.heterograph_index import HeteroGraphIndex
+from dgl.data.utils import Subset
+from dgl.utils import expand_as_pair
 from torch import Tensor
 from torch.nn import Parameter
 from torch.autograd import Function
+from torchmetrics.functional import mean_absolute_error
 import scipy
 from GSL.model import BaseModel
 from GSL.utils import *
@@ -25,28 +28,35 @@ class HGPSL(BaseModel):
     Hierarchical Graph Pooling with Structure Learning (AAAI 2020)
     The most of code implementation comes from: https://github.com/dmlc/dgl/tree/master/examples/pytorch/hgp_sl
     """
-    def __init__(self, device, config, num_node_features, num_classes):
-        super(HGPSL, self).__init__(device)
-        self.folds = config.folds
-        self.batch_size = config.batch_size
-        self.epochs = config.epochs
-        self.lr = config.lr
-        self.weight_decay = config.weight_decay
-        self.num_layers = config.num_layers
-        self.hidden_dim = config.hidden_dim
-        self.in_dim = num_node_features
-        self.out_dim = num_classes
-        self.pool_ratio = config.pool_ratio
-        self.sample = config.sample
-        self.sparse_attn = config.sparse_attn
-        self.sl = config.sl
-        self.lamb = config.lamb
-        self.patience = config.patience
-        self.dropout = config.dropout
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, params=None):
+        super(HGPSL, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device, params=params)
+        if dataset_name == 'reddit-b':
+            if self.config.backbone == "GAT":
+                self.config.batch_size = 30
+                self.config.test_batch_size = 10
+            else:
+                self.config.batch_size = 80
+                self.config.test_batch_size = 60
+        
+        self.num_features = num_features
+        self.num_classes = num_classes
+        self.num_layers = self.config.num_layers
+        self.backbone = self.config.backbone
+        self.hidden_dim = self.config.hidden_dim
+        self.pool_ratio = self.config.pool_ratio
+        self.sample = self.config.sample
+        self.sparse_attn = self.config.sparse_attn
+        self.sl = self.config.sl
+        self.lamb = self.config.lamb
+        self.patience = self.config.patience
+        self.dropout = self.config.dropout
+        self.use_log_soft = self.config.use_log_soft
+        self.loss_type = self.config.loss_type
+
 
         convpools = []
         for i in range(self.num_layers):
-            c_in = self.in_dim if i == 0 else self.hidden_dim
+            c_in = self.num_features if i == 0 else self.hidden_dim
             c_out = self.hidden_dim
             use_pool = i != self.num_layers - 1
             convpools.append(
@@ -59,13 +69,14 @@ class HGPSL(BaseModel):
                     sl=self.sl,
                     lamb=self.lamb,
                     pool=use_pool,
+                    conv_type=self.backbone
                 )
             )
         self.convpool_layers = torch.nn.ModuleList(convpools)
 
         self.lin1 = torch.nn.Linear(self.hidden_dim * 2, self.hidden_dim)
         self.lin2 = torch.nn.Linear(self.hidden_dim, self.hidden_dim // 2)
-        self.lin3 = torch.nn.Linear(self.hidden_dim // 2, self.out_dim)
+        self.lin3 = torch.nn.Linear(self.hidden_dim // 2, self.num_classes)
 
     def reset_parameters(self):
         for convpool in self.convpool_layers:
@@ -79,6 +90,7 @@ class HGPSL(BaseModel):
         e_feat = None
 
         for i in range(self.num_layers):
+            # from IPython import embed; embed(header='in forward')
             graph, n_feat, e_feat, readout = self.convpool_layers[i](
                 graph, n_feat, e_feat
             )
@@ -93,7 +105,7 @@ class HGPSL(BaseModel):
         n_feat = F.dropout(n_feat, p=self.dropout, training=self.training)
         n_feat = self.lin3(n_feat)
 
-        return F.log_softmax(n_feat, dim=-1)
+        return F.log_softmax(n_feat, dim=-1) if self.use_log_soft else n_feat
 
     def train_HGPSL(self, train_loader, optimizer):
         self.train()
@@ -103,9 +115,8 @@ class HGPSL(BaseModel):
             optimizer.zero_grad()
             batch_graphs, batch_labels = batch
             batch_graphs = batch_graphs.to(self.device)
-            batch_labels = batch_labels.reshape(-1).long().to(self.device)
             out = self(batch_graphs, batch_graphs.ndata["feat"])
-            loss = F.nll_loss(out, batch_labels)
+            loss = self.loss_func(out, batch_labels)
             loss.backward()
             optimizer.step()
 
@@ -113,6 +124,34 @@ class HGPSL(BaseModel):
 
         return total_loss / num_batches
     
+    def loss_func(self, out, batch_labels):
+        if self.loss_type == 'L1':
+            batch_labels = batch_labels.to(self.device)
+            loss = F.l1_loss(out, batch_labels.reshape(out.shape))
+        elif self.loss_type == 'BCE':
+            batch_labels = batch_labels.to(self.device)
+            loss = F.binary_cross_entropy_with_logits(out, batch_labels)
+        else:
+            batch_labels = batch_labels.reshape(-1).long().to(self.device)
+            loss = F.nll_loss(out, batch_labels)
+        return loss
+
+
+    def metric_func(self, pred, labels):
+        if self.metric == 'mae':
+            # from IPython import embed; embed()
+            result = mean_absolute_error(preds=pred, target=labels.to(self.device))
+        elif self.metric == 'ap':
+            # from IPython import embed; embed()
+            result = eval_ap(pred.cpu().numpy(), labels.numpy())
+        else:
+            pred = pred.argmax(dim=1).cpu()
+            result = pred.eq(labels.reshape(-1, pred.size(0))).sum().item()
+            # from IPython import embed; embed(header='in metric_func')
+        
+        return result
+    
+
     def test(self, loader):
         self.eval()
         correct = 0.0
@@ -123,59 +162,146 @@ class HGPSL(BaseModel):
                 batch_graphs, batch_labels = batch
                 num_graphs += batch_labels.size(0)
                 batch_graphs = batch_graphs.to(self.device)
-                batch_labels = batch_labels.reshape(-1).long().to(self.device)
                 out = self(batch_graphs, batch_graphs.ndata["feat"])
-                pred = out.argmax(dim=1)
-                loss += F.nll_loss(out, batch_labels, reduction="sum").item()
-                correct += pred.eq(batch_labels).sum().item()
-        return correct / num_graphs, loss / num_graphs
+                loss += self.loss_func(out, batch_labels)
+                correct += self.metric_func(out, batch_labels)
+        result = correct / num_graphs
+        # from IPython import embed; embed(header='in Test: ')
+        return result, loss / len(loader)
 
-    def fit(self, dataset):
-        folds_results = []
-        for fold, (train_idx, test_idx, val_idx) in enumerate(zip(*k_fold(dataset, self.folds))):
+    def fit(self, dataset, logger=None):
+        folds, epochs, batch_size, test_batch_size, lr, weight_decay \
+            = self.config.folds, self.config.epochs, self.config.batch_size, self.config.test_batch_size, \
+            self.config.lr, self.config.weight_decay
+        
+        val_losses, val_accs, test_accs, durations = [], [], [], []
+        for fold, (train_idx, test_idx, val_idx) in enumerate(zip(*k_fold(dataset, folds, self.config.seed))):
 
-            train_loader = GraphDataLoader(dataset, sampler=SubsetRandomSampler(train_idx), batch_size=self.batch_size)
-            val_loader = GraphDataLoader(dataset, sampler=SubsetRandomSampler(val_idx), batch_size=self.batch_size)
-            test_loader = GraphDataLoader(dataset, sampler=SubsetRandomSampler(test_idx), batch_size=self.batch_size)
+            fold_val_losses = []
+            fold_val_accs = []
+            fold_test_accs = []
 
-            self.reset_parameters()
+            infos = dict()
 
-            optimizer = torch.optim.Adam(
-                self.parameters(), lr=self.lr, weight_decay=self.weight_decay
-            )
+            train_loader = GraphDataLoader(dataset, sampler=SubsetRandomSampler(train_idx), batch_size=batch_size)
+            val_loader = GraphDataLoader(dataset, sampler=SubsetRandomSampler(val_idx), batch_size=test_batch_size)
+            test_loader = GraphDataLoader(dataset, sampler=SubsetRandomSampler(test_idx), batch_size=test_batch_size)
+
+            self.to(self.device).reset_parameters()
+            optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
+
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+
+            t_start = time.perf_counter()
 
             # best_test_result, best_val = 0, float("inf")
-            best_test_result, best_val = 0, float("-inf")
-            for epoch in range(self.epochs):
+            for epoch in range(1, epochs + 1):
                 loss = self.train_HGPSL(train_loader, optimizer)
                 train_result, _ = self.test(train_loader)
                 val_result, val_loss = self.test(val_loader)
                 test_result, _ = self.test(test_loader)
+                
+                val_losses.append(val_loss)
+                fold_val_losses.append(val_loss)
+                fold_val_accs.append(val_result)
+                val_accs.append(val_result)
+                test_accs.append(test_result)
+                fold_test_accs.append(test_result)
 
-                print(f'Epoch: {epoch: 02d}, '
-                      f'Loss: {loss:.4f}, '
-                      f'Train: {100 * train_result:.2f}%, '
-                      f'Valid: {100 * val_result:.2f}%, '
-                      f'Test: {100 * test_result:.2f}%')
+                eval_info = {
+                    'fold': fold,
+                    'epoch': epoch,
+                    'train_loss': loss,
+                    'train_result': train_result,
+                    'val_loss': val_loss,
+                    'val_result': val_result,
+                    'test_result': test_result,
+                }
 
-                # if best_val > val_loss:
-                #     best_val = val_loss
-                if best_val < val_result:
-                    print("Update Best Result!")
-                    best_val = val_result
-                    best_test_result = test_result
-                    bad_cound = 0
-                else:
-                    bad_cound += 1
+                infos[epoch] = eval_info
 
-                if bad_cound >= self.patience:
-                    break
-            folds_results.append(best_test_result)
+                if logger is not None:
+                    logger(eval_info)
+
+                if epoch % 1 == 0:
+                    print(
+                        'Epoch: {:d}, train loss: {:.3f}, train result: {:.3f}, val loss: {:.5f}, val result: {:.3f}, test result: {:.3f}'
+                        .format(epoch, eval_info["train_loss"], eval_info["train_result"], eval_info["val_loss"],
+                                eval_info["val_result"], eval_info["test_result"]))
+
+            fold_val_loss, argmin = torch.tensor(fold_val_losses).min(dim=0)
+            fold_val_acc, argmax = torch.tensor(fold_val_accs).max(dim=0)
+            fold_test_acc = fold_test_accs[argmin]
+            if torch.cuda.is_available():
+                torch.cuda.synchronize()
+
+            t_end = time.perf_counter()
+            durations.append(t_end - t_start)
+
+            print('Fold: {:d}, train result: {:.3f}, Val loss: {:.3f}, Val result: {:.5f}, Test result: {:.3f}'
+                  .format(eval_info["fold"], eval_info["train_result"], fold_val_loss, fold_val_acc, fold_test_acc))
         
-            print('Best result of fold {}: {}'.format(fold, best_test_result))
+        val_losses, val_accs, test_accs, duration = torch.tensor(val_losses), torch.tensor(val_accs), torch.tensor(test_accs), torch.tensor(
+            durations)
+        val_losses, val_accs, test_accs = val_losses.view(folds, epochs), val_accs.view(folds, epochs), test_accs.view(
+            folds, epochs)
+
+        min_val_loss, argmin = val_losses.min(dim=1)
+        test_acc = test_accs[torch.arange(folds, dtype=torch.long), argmin]
+
+        val_loss_mean = min_val_loss.mean().item()
+        test_acc_mean = test_acc.mean().item()
+        test_acc_std = test_acc.std().item()
+        duration_mean = duration.mean().item()
+        print(test_acc)
+        print('Val Loss: {:.4f}, Test Result: {:.3f}+{:.3f}, Duration: {:.3f}'
+              .format(val_loss_mean, test_acc_mean, test_acc_std, duration_mean))
+
+        self.best_result = test_acc_mean
+    
+    
+    def fit_without_kfold(self, dataset):
+        split_dict = dataset.get_idx_split()
+        train_dataset, val_dataset, test_dataset = (Subset(dataset, split_dict['train']), 
+                                                Subset(dataset, split_dict['val']), 
+                                                Subset(dataset, split_dict['test']))
+        train_loader = GraphDataLoader(train_dataset, batch_size=self.batch_size)
+        val_loader = GraphDataLoader(val_dataset, batch_size=self.batch_size)
+        test_loader = GraphDataLoader(test_dataset, batch_size=self.batch_size)
+
+        self.reset_parameters()
+        optimizer = torch.optim.Adam(
+                self.parameters(), lr=self.lr, weight_decay=self.weight_decay
+        )
+
+        best_test_result, best_val = 0, float("inf")
+
+        for epoch in range(self.epochs):
+            loss = self.train_HGPSL(train_loader, optimizer)
+            train_result, _ = self.test(train_loader)
+            val_result, val_loss = self.test(val_loader)
+            test_result, _ = self.test(test_loader)
+
+            print(f'Epoch: {epoch: 02d}, '
+                    f'Loss: {loss:.4f}, '
+                    f'Train: {100 * train_result:.2f}%, '
+                    f'Valid: {100 * val_result:.2f}%, '
+                    f'Test: {100 * test_result:.2f}%')
+
+            if best_val > val_loss:
+                best_val = val_loss
+                print("Update Best Result!")
+                best_test_result = test_result
+                bad_cound = 0
+            else:
+                bad_cound += 1
+
+            if bad_cound >= self.patience:
+                break
         
-        print('\nTest results: ', folds_results)
-        print('Final Test Accuracy: {:.4f}+{:.4f}'.format(np.mean(folds_results), np.std(folds_results)))
+        print('Final Test Perf: {:.4f}'.format(best_test_result))
+        return best_test_result
 
 
 class WeightedGraphConv(GraphConv):
@@ -199,6 +325,8 @@ class WeightedGraphConv(GraphConv):
         if e_feat is None:
             return super(WeightedGraphConv, self).forward(graph, n_feat)
 
+        # from IPython import embed; embed(header="in WeightedGraphConv1")
+
         with graph.local_scope():
             if self.weight is not None:
                 n_feat = torch.matmul(n_feat, self.weight)
@@ -216,7 +344,167 @@ class WeightedGraphConv(GraphConv):
                 n_feat = n_feat + self.bias
             if self._activation is not None:
                 n_feat = self._activation(n_feat)
+            # from IPython import embed; embed(header="in WeightedGraphConv2")
             return n_feat
+        
+class WeightedGATConv(GATConv):
+    r"""
+    Description
+    -----------
+    GATConv with edge weights on homogeneous graphs.
+    If edge weights are not given, directly call GATConv instead.
+
+    Parameters
+    ----------
+    graph : DGLGraph
+        The graph to perform this operation.
+    n_feat : torch.Tensor
+        The node features
+    e_feat : torch.Tensor, optional
+        The edge features. Default: :obj:`None`
+    """
+
+    def __init__(self, in_dim, out_dim, num_heads=1):
+        super(WeightedGATConv, self).__init__(in_dim, out_dim, num_heads)
+
+
+    def forward(self, graph: DGLGraph, n_feat, e_feat=None):
+        # if e_feat is None:
+        #     return super(WeightedGATConv, self).forward(graph, n_feat)
+
+        # with graph.local_scope():
+        #     if self.weight is not None:
+        #         n_feat = torch.matmul(n_feat, self.weight)
+        #     src_norm = torch.pow(graph.out_degrees().float().clamp(min=1), -0.5)
+        #     src_norm = src_norm.view(-1, 1)
+        #     dst_norm = torch.pow(graph.in_degrees().float().clamp(min=1), -0.5)
+        #     dst_norm = dst_norm.view(-1, 1)
+        #     n_feat = n_feat * src_norm
+        #     graph.ndata["h"] = n_feat
+        #     graph.edata["e"] = e_feat
+        #     graph.update_all(fn.u_mul_e("h", "e", "m"), fn.sum("m", "h"))
+        #     n_feat = graph.ndata.pop("h")
+        #     n_feat = n_feat * dst_norm
+        #     if self.bias is not None:
+        #         n_feat = n_feat + self.bias
+        #     if self._activation is not None:
+        #         n_feat = self._activation(n_feat)
+        #     return n_feat
+        return super(WeightedGATConv, self).forward(graph, n_feat)
+
+
+class WeightedSAGEConv(SAGEConv):
+    r"""
+    Description
+    -----------
+    GATConv with edge weights on homogeneous graphs.
+    If edge weights are not given, directly call GATConv instead.
+
+    Parameters
+    ----------
+    graph : DGLGraph
+        The graph to perform this operation.
+    n_feat : torch.Tensor
+        The node features
+    e_feat : torch.Tensor, optional
+        The edge features. Default: :obj:`None`
+    """
+    def __init__(self, in_dim, out_dim, aggregator_type='mean'):
+        super(WeightedSAGEConv ,self).__init__(in_dim, out_dim, aggregator_type)
+
+    def forward(self, graph: DGLGraph, n_feat, e_feat=None):
+        if e_feat is None:
+            return super(WeightedSAGEConv, self).forward(graph, n_feat)
+
+        with graph.local_scope():
+            feat_src = feat_dst = self.feat_drop(n_feat)
+            if graph.is_block:
+                feat_dst = feat_src[:graph.number_of_dst_nodes()]
+            msg_fn = fn.copy_u('h', 'm')
+            if e_feat is not None:
+                graph.edata['_e_feat'] = e_feat
+                msg_fn = fn.u_mul_e('h', '_e_feat', 'm')
+            
+            h_self = feat_dst
+
+            if graph.number_of_edges() == 0:
+                graph.dstdata['neigh'] = torch.zeros(
+                    feat_dst.shape[0], self._in_src_feats).to(feat_dst)
+
+            lin_before_mp = self._in_src_feats > self._out_feats
+
+            graph.srcdata['h'] = self.fc_neigh(feat_src) if lin_before_mp else feat_src
+            graph.update_all(msg_fn, fn.mean('m', 'neigh'))
+            h_neigh = graph.dstdata['neigh']
+            if not lin_before_mp:
+                h_neigh = self.fc_neigh(h_neigh)
+
+            rst = self.fc_self(h_self) + h_neigh
+
+            if self.activation is not None:
+                rst = self.activation(rst)
+            
+            if self.norm is not None:
+                rst = self.norm(rst)
+
+            # from IPython import embed; embed(header='in WeightedSageConv2')
+
+            return rst
+        
+
+class WeightedGINConv(GINConv):
+    r"""
+    Description
+    -----------
+    GATConv with edge weights on homogeneous graphs.
+    If edge weights are not given, directly call GATConv instead.
+
+    Parameters
+    ----------
+    graph : DGLGraph
+        The graph to perform this operation.
+    n_feat : torch.Tensor
+        The node features
+    e_feat : torch.Tensor, optional
+        The edge features. Default: :obj:`None`
+    """
+    def __init__(self, apply_func, learn_eps=False):
+        super(WeightedGINConv ,self).__init__(apply_func, learn_eps=learn_eps)
+
+
+    def forward(self, graph: DGLGraph, n_feat, e_feat=None):
+        if e_feat is None:
+            return super(WeightedGINConv, self).forward(graph, n_feat)
+
+        # from IPython import embed; embed(header='in gin conv1')
+        _reducer = getattr(fn, self._aggregator_type)
+        with graph.local_scope():
+            aggregate_fn = fn.copy_u('h', 'm')
+            graph.edata['e'] = e_feat
+            aggregate_fn = fn.u_mul_e('h', 'e', 'm')
+
+            feat_src, feat_dst = expand_as_pair(n_feat, graph)
+            graph.srcdata['h'] = feat_src
+            graph.update_all(aggregate_fn, _reducer('m', 'neigh'))
+            rst = (1 + self.eps) * feat_dst + graph.dstdata['neigh']
+            if self.apply_func is not None:
+                rst = self.apply_func(rst)
+            if self.activation is not None:
+                rst = self.activation(rst)
+            # from IPython import embed; embed(header='in gin conv1')
+            return rst
+        
+    def reset_parameters(self):
+        self.apply_func.reset_parameters()
+        # self.eps = nn.Parameter(torch.FloatTensor([0])).to(self.apply_func.device)
+        
+
+CONV_TYPE_DICT={
+    'GCN': WeightedGraphConv,
+    'GAT': WeightedGATConv,
+    'SAGE': WeightedSAGEConv,
+    'GIN': WeightedGINConv
+}
 
 
 class ConvPoolReadout(torch.nn.Module):
@@ -232,11 +520,15 @@ class ConvPoolReadout(torch.nn.Module):
         sl: bool = True,
         lamb: float = 1.0,
         pool: bool = True,
-        conv_type: str = 'GCN_Conv'
+        conv_type: str = 'SAGE',        
     ):
         super(ConvPoolReadout, self).__init__()
         self.use_pool = pool
-        self.conv = WeightedGraphConv(in_feat, out_feat)
+        if conv_type != 'GIN':
+            self.conv = CONV_TYPE_DICT[conv_type](in_feat, out_feat)
+        else:
+            mlp = gin.MLP(in_feat, in_feat, out_feat)
+            self.conv = CONV_TYPE_DICT[conv_type](mlp, learn_eps=True)
         if pool:
             self.pool = HGPSLPool(
                 out_feat,
@@ -590,6 +882,8 @@ def topk(
     cum_num_nodes = torch.cat(
         [num_nodes.new_zeros(1), num_nodes.cumsum(dim=0)[:-1]], dim=0
     )
+
+    # from IPython import embed; embed()
 
     index = torch.arange(batch_id.size(0), dtype=torch.long, device=x.device)
     index = (index - cum_num_nodes[batch_id]) + (batch_id * max_num_nodes)

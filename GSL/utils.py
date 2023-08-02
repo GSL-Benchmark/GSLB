@@ -583,7 +583,7 @@ def sample_mask(idx, l):
     """Create mask."""
     mask = np.zeros(l)
     mask[idx] = 1
-    return np.array(mask, dtype=np.bool)
+    return np.array(mask, dtype=bool)
 
 
 def row_normalize_features(features):
@@ -620,8 +620,8 @@ def dense_adj_to_edge_index(adj):
     return edge_index
 
 
-def k_fold(dataset, folds):
-    skf = StratifiedKFold(folds, shuffle=True, random_state=12345)
+def k_fold(dataset, folds, seed):
+    skf = StratifiedKFold(folds, shuffle=True, random_state=seed)
 
     test_indices, train_indices = [], []
     if isinstance(dataset, DGLDataset):
