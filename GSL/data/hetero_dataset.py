@@ -209,7 +209,7 @@ class HeteroDataset():
         self.test_mask = torch.BoolTensor(get_mask(self.test_idx.cpu()))
 
     def merge_labels(self):
-        labels = torch.zeros(self.train_idx.shape[0] + self.val_idx.shape[0] + self.test_idx.shape[0]).type(torch.LongTensor)
+        labels = -1 * torch.ones(self.features.shape[0]).type(torch.LongTensor)
         labels[self.train_idx] = self.train_y
         labels[self.val_idx] = self.val_y
         labels[self.test_idx] = self.test_y
@@ -317,7 +317,7 @@ if __name__ == '__main__':
     # from GSL.data import HeteroDataset
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     data_path = osp.join(osp.expanduser('~'), 'datasets')
-    data = HeteroDataset(root=data_path, name='dblp', device=device)
+    data = HeteroDataset(root=data_path, name='yelp')
     adj, features, labels = data.adj, data.features, data.labels
     train_mask, val_mask, test_mask = data.train_mask, data.val_mask, data.test_mask
     meta_path_emb = data.meta_path_emb

@@ -557,6 +557,7 @@ if __name__ == "__main__":
     from GSL.data import Dataset
 
     # Citation dataset
-    data = Dataset(root="/tmp/", name="cora", seed=0)
+    data_path = osp.join(osp.expanduser('~'), 'datasets')
+    data = Dataset(root=data_path, name="cora", seed=0)
     adj, features, labels = data.adj, data.features, data.labels
     train_mask, val_mask, test_mask = data.train_mask, data.val_mask, data.test_mask
