@@ -74,8 +74,13 @@ class HeteroDataset():
             self.merge_labels()
             self.idx2mask()
 
-        self.num_feat = 0
-        self.num_class = 0
+    @property
+    def num_feat(self):
+        return self.features.shape[1]
+    
+    @property
+    def num_class(self):
+        return self.labels.max().item() + 1
 
     def construct_dgl_graph(self):
         # transform graph into dgl.heterograph
