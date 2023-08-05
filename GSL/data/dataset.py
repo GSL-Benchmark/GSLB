@@ -11,6 +11,7 @@ import torch
 import dgl
 import time
 import json
+import random
 from dgl import ops
 from sklearn.model_selection import train_test_split
 from GSL.utils import (sample_mask, sparse_mx_to_torch_sparse_tensor, to_scipy, to_tensor,
@@ -20,7 +21,7 @@ from GSL.processor import KNNSparsify, kneighbors_graph, KNearestNeighbour
 
 
 def get_mask(idx, labels):
-    mask = np.zeros(labels.shape[0], dtype=np.bool)
+    mask = np.zeros(labels.shape[0], dtype=np.bool_)
     mask[idx] = 1
     return mask
 
@@ -166,52 +167,37 @@ def random_coauthor_amazon_splits(labels, lcc_mask=None):
 class Dataset:
     """
     Dataset class contains:
-        three citation network datasets: "cora", "citeseer" and "pubmed";
-        two product network datasets: "amazon-computers" and "amazon-photo";
-        two ogb benchmark datasets: "ogbn-arxiv" and "ogbn-products"
-        five heterophilous datasets: "roman-empire", "amazon-ratings", "minesweeper", "tolokers", "questions"
+        three citation network datasets: "cora", "citeseer", and "pubmed";
+        one ogb benchmark datasets: "ogbn-arxiv"
+        four heterophilous datasets: "cornell", "texas", "wisconsin", and "actor"
     The 'cora', 'citeseer' and 'pubmed' are downloaded from https://raw.githubusercontent.com/tkipf/gcn/master/gcn/data/
-    The 'amazon-computers' and 'amazon-photo' are downloaded from https://github.com/shchur/gnn-benchmark/raw/master/data/npz/
-    The 'ogbn-arxiv' and 'ogbn-products' are downloaded from http://snap.stanford.edu/ogb/data/nodeproppred
-    The 'roman-empire', 'amazon-ratings', 'minesweeper', 'tolokers' and 'questions' are downloaded from https://raw.githubusercontent.com/yandex-research/heterophilous-graphs/master/data/
-
-    Note that 'minesweeper', 'tolokers' and 'questions' need to be evaluated by ROC AUC metric.
+    The 'ogbn-arxiv' is downloaded from http://snap.stanford.edu/ogb/data/nodeproppred
+    The 'cornell', 'texas', 'wisconsin', and 'actor' are downloaded from https://raw.githubusercontent.com/yandex-research/heterophilous-graphs/master/data/
 
     Parameters
     ----------
     root : string
         root directory where the dataset should be saved.
     name : string
-        dataset name, it can be chosen from ['cora', 'citeseer', 'pubmed',
-        'amazon-computers', 'amazon-photo',
-        'ogbn-arxiv', 'ogbn-products',
-        'roman-empire', 'amazon-ratings', 'minesweeper', 'tolokers', 'questions']
+        dataset name, it can be chosen from ['cora', 'citeseer', 'pubmed', 'ogbn-arxiv',
+        'cornell', 'texas', 'wisconsin', 'actor']
     seed : int
         random seed for splitting training/validation/test.
-    split_num : int
-        training/validation/test splits of heterophilic datasets, it can be chosen from [0, 9]
-
+    use_mettack: bool
+        whether to use the structure after being attacked by mettack.
+    ptb_rate: float
+        the perturbation rate.
 
     Examples
-    -------- homophilic dataset --------
-        >>> from GSL.dataset import Dataset
+        >>> from GSL.data import *
+    -------- Load a homophilic or heterophilic graph dataset --------
         >>> data = Dataset(root='/tmp/', name='cora')
-        >>> adj, features, labels = data.adj, data.features, data.labels
-        >>> train_mask, val_mask, test_mask = data.train_mask, data.val_mask, data.test_mask
-    -------- heterophilic dataset --------
-        >>> from GSL.dataset import Dataset
-        >>> data = Dataset(root='/tmp/', name='roman-empire', split_num=0)
-        >>> adj, features, labels = data.adj, data.features, data.labels
-        >>> train_mask, val_mask, test_mask = data.train_mask, data.val_mask, data.test_mask
-    -------- Randomly delete edges --------
-        >>> from GSL.dataset import Dataset
-        >>> data = Dataset(root='/tmp/', name='cora', drop_rate=0.5)
-    -------- Use KNN graph --------
-        >>> from GSL.dataset import Dataset
-        >>> data = Dataset(root='/tmp/', name='cora', k=5, use_knn=True)
-    -------- Load mettack graph --------
-        >>> from GSL.dataset import Dataset
-        >>> data = Dataset(root='/tmp/', name='cora', setting='nettack', ptb_rate=0.05)
+    -------- Load a perturbed graph dataset --------
+        >>> data = Dataset(root='/tmp/', name='cora', use_mettack=True, ptb_rate=0.05)
+    -------- Load a heterogeneous graph dataset --------
+        >>> data = HeteroDataset(root='/tmp/', name='acm')
+    -------- Load a graph-level dataset --------
+        >>> data = GraphDataset(root='/tmp/', name='IMDB-BINARY', model='GCN')
     """
 
     def __init__(self, root, name, seed=None, use_mettack=False, ptb_rate=0):
@@ -225,7 +211,8 @@ class Dataset:
             "cornell",
             "wisconsin",
             "texas",
-            "actor"
+            "actor",
+            "polblogs"
         ], (
             "Currently only support cora, citeseer, pubmed, "
             + "ogbn-arxiv, "
@@ -381,14 +368,9 @@ class Dataset:
         self.features = self.features.to(device)
         self.adj = self.adj.to(device)
         self.labels = self.labels.to(device)
-        try:
-            self.train_mask = self.train_mask.to(device)
-            self.val_mask = self.val_mask.to(device)
-            self.test_mask = self.test_mask.to(device)
-        except:
-            self.train_masks = [self.train_masks[i].to(device) for i in range(10)]
-            self.val_masks = [self.val_masks[i].to(device) for i in range(10)]
-            self.test_masks = [self.test_masks[i].to(device) for i in range(10)]
+        self.train_mask = self.train_mask.to(device)
+        self.val_mask = self.val_mask.to(device)
+        self.test_mask = self.test_mask.to(device)
         return self
 
     def download(self, name, url):
@@ -473,6 +455,20 @@ class Dataset:
                 labels[i] = torch.tensor([1, 0, 0, 0, 0, 0])
         labels = (labels == 1).nonzero()[:, 1]
 
+        # train = ~(val_mask | test_mask)
+        # num_class = labels.max() + 1
+        # sample_num = 50
+        # train_idx = []
+        # for i in range(num_class):
+        #     cls_idx = torch.where((labels[train] == i) == True)[0]
+        #     cls_idx = cls_idx[torch.randperm(cls_idx.size(0))]
+        #     cls_idx = cls_idx[:sample_num]
+        #     train_idx.append(cls_idx)
+        # train_idx = torch.cat(train_idx, dim=0)
+        # self.idx_train = torch.LongTensor(train_idx)
+        # train_mask = sample_mask(train_idx, labels.shape[0])
+        # self.train_mask = torch.BoolTensor(train_mask)
+
         return adj, features, labels
 
     def load_ogb(self):
@@ -538,13 +534,13 @@ class Dataset:
 
         labels = self.onehot(labels)
 
-        self.train_mask = torch.BoolTensor(get_mask(train_idx))
-        self.val_mask = torch.BoolTensor(get_mask(val_idx))
-        self.test_mask = torch.BoolTensor(get_mask(test_idx))
+        self.train_mask = torch.BoolTensor(get_mask(train_idx, labels))
+        self.val_mask = torch.BoolTensor(get_mask(val_idx, labels))
+        self.test_mask = torch.BoolTensor(get_mask(test_idx, labels))
         self.y_train, self.y_val, self.y_test = (
-            get_y(train_idx),
-            get_y(val_idx),
-            get_y(test_idx),
+            get_y(train_idx, labels),
+            get_y(val_idx, labels),
+            get_y(test_idx, labels),
         )
 
     def onehot(self, labels):
