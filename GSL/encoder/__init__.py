@@ -5,6 +5,7 @@ from .graphsage import GraphSAGE
 from .mlp import MLP
 from .nodeformer_conv import NodeFormerConv
 from .gprgnn import GPRGNN, GPR_prop
+from .dagnn import DAGNN
 
 __all__ = [
     "GAT",
@@ -21,7 +22,8 @@ __all__ = [
     "MLP",
     "NodeFormerConv",
     "GPR_prop",
-    "GPRGNN"
+    "GPRGNN",
+    "DAGNN"
 ]
 
 classes = __all__

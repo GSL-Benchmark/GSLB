@@ -1,5 +1,5 @@
 from GSL.model import BaseModel
-from GSL.encoder import GCN, GPRGNN
+from GSL.encoder import GCN, GPRGNN, DAGNN
 from GSL.utils import row_normalize_features, dense_adj_to_edge_index
 
 import torch
@@ -132,6 +132,61 @@ class GPRGNN_Trainer(BaseModel):
                             dprate=self.config.dprate,
                             dropout=self.config.dropout)
     
+    def fit(self, dataset, split_num=0):
+        adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
+        if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
+            train_mask = dataset.train_masks[split_num % 10]
+            val_mask = dataset.val_masks[split_num % 10]
+            test_mask = dataset.test_masks[split_num % 10]
+        else:
+            train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
+
+        edge_index = dense_adj_to_edge_index(adj)
+
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
+
+        best_val, best_result = float("-inf"), 0
+        for epoch in range(self.config.epochs):
+            self.train()
+            optimizer.zero_grad()
+
+            output = self.model(features, edge_index)
+            loss = F.cross_entropy(output[train_mask], labels[train_mask])
+
+            loss.backward()
+            optimizer.step()
+
+            with torch.no_grad():
+                self.eval()
+                output = self.model(features, edge_index)
+                train_result = self.metric(output[train_mask], labels[train_mask])
+                val_result = self.metric(output[val_mask], labels[val_mask])
+                test_result = self.metric(output[test_mask], labels[test_mask])
+            
+            if epoch % 10 == 0:
+                print(f'Epoch: {epoch: 02d}, '
+                    f'Loss: {loss:.4f}, '
+                    f'Train: {100 * train_result:.2f}%, '
+                    f'Valid: {100 * val_result:.2f}%, '
+                    f'Test: {100 * test_result:.2f}%')
+            
+            if val_result > best_val:
+                best_val = val_result
+                best_result = test_result
+
+        print('Best Test Result: ', best_result.item())
+        self.best_result = best_result.item()
+
+
+class DAGNN_Trainer(BaseModel):
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, params):
+        super(DAGNN_Trainer, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device, params)
+        self.model = DAGNN(num_features=num_features,
+                           num_classes=num_classes,
+                           hidden=self.config.hidden,
+                           K=self.config.K,
+                           dropout=self.config.dropout)
+        
     def fit(self, dataset, split_num=0):
         adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
         if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
