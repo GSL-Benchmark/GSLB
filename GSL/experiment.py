@@ -41,8 +41,8 @@ class Experiment(object):
         self.model_name = model_name
         self.dataset_name = dataset.lower()
         self.model_dict = {
-            'GCN': GCN_Trainer, 'MLP': MLP_Trainer, 'GRCN': GRCN, 'ProGNN': ProGNN, 'IDGL': IDGL, 'GEN': GEN, 'CoGSL': CoGSL, 
-            'SLAPS': SLAPS, 'SUBLIME': SUBLIME, 'STABLE': STABLE, 'GTN': GTN, 'HGSL': HGSL, 
+            'GCN': GCN_Trainer, 'MLP': MLP_Trainer, 'GPRGNN': GPRGNN_Trainer, 'GRCN': GRCN, 'ProGNN': ProGNN, 'IDGL': IDGL, 'GEN': GEN, 
+            'SLAPS': SLAPS, 'SUBLIME': SUBLIME, 'STABLE': STABLE, 'GTN': GTN, 'HGSL': HGSL, 'CoGSL': CoGSL,
             'HGPSL': HGPSL, 'VIBGSL': VIBGSL, 'HESGSL': HESGSL, 'GSR': GSR, 'NodeFormer': NodeFormer
         }
 

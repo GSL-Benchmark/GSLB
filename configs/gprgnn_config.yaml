@@ -1,0 +1,32 @@
+Default:
+  epochs: 1000
+  lr: 0.002
+  weight_decay: 0.0005
+  hidden: 64
+  dropout: 0.5
+  K: 10
+  alpha: 0.1
+  dprate: 0.5
+  Init: PPR
+  ppnp: GPR_prop
+  Gamma: None
+
+cora:
+  lr: 0.01
+  alpha: 0.01
+
+citeseer:
+  lr: 0.01
+  alpha: 0.1
+
+pubmed:
+  lr: 0.05
+  alpha: 0.2
+
+cornell:
+  lr: 0.05
+  alpha: 0.9
+
+texas:
+  lr: 0.05
+  alpha: 1.0

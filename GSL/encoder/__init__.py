@@ -4,6 +4,7 @@ from .gin import GIN
 from .graphsage import GraphSAGE
 from .mlp import MLP
 from .nodeformer_conv import NodeFormerConv
+from .gprgnn import GPRGNN, GPR_prop
 
 __all__ = [
     "GAT",
@@ -18,7 +19,9 @@ __all__ = [
     "GIN",
     "GraphSAGE",
     "MLP",
-    "NodeFormerConv"
+    "NodeFormerConv",
+    "GPR_prop",
+    "GPRGNN"
 ]
 
 classes = __all__
