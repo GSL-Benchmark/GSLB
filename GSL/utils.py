@@ -445,6 +445,7 @@ class EarlyStopping:
         self.best_epoch = None
         self.early_stop = False
         self.best_weight = None
+        self.best_loss = None
         self.path = path
 
     def step(self, acc, model, epoch):
@@ -466,6 +467,38 @@ class EarlyStopping:
             self.best_weight = deepcopy(model.state_dict())
             self.counter = 0
 
+        return self.early_stop
+
+    def loss_step(self, loss, model, epoch):
+        """
+
+        Parameters
+        ----------
+        loss Float or torch.Tensor
+
+        model torch.nn.Module
+
+        Returns
+        -------
+
+        """
+        if isinstance(loss, torch.Tensor):
+            loss = loss.item()
+        if self.best_loss is None:
+            self.best_loss = loss
+            self.best_epoch = epoch
+            self.best_weight = deepcopy(model.state_dict())
+        elif loss >= self.best_loss:
+            self.counter += 1
+            print(f'EarlyStopping counter: {self.counter} out of {self.patience}, best_val_loss:{self.best_loss:.4f} at E{self.best_epoch}')
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            if loss < self.best_loss:
+                self.best_weight = deepcopy(model.state_dict())
+                self.best_epoch = epoch
+            self.best_loss = np.min((loss, self.best_loss))
+            self.counter = 0
         return self.early_stop
 
 def true_positive(pred, target, n_class):
