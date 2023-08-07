@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 import warnings
 import dgl
+from dgl.data.utils import download, extract_archive
 warnings.filterwarnings("ignore",category=DeprecationWarning)
 
 class HeteroDataset():
@@ -37,16 +38,20 @@ class HeteroDataset():
     def __init__(self, root, name, dgl_heterograph=False):
         self.name = name.lower()
 
-        assert self.name in ['acm', 'dblp', 'yelp'], \
+        assert self.name in ['acm', 'dblp', 'yelp', 'imdb'], \
                 'Currently only support acm, dblp, yelp'
 
         self.mp_list = {
             'acm': ['psp', 'pap', 'pspap'],
             'dblp': ['apcpa'],
-            'yelp': ['bub', 'bsb', 'bublb', 'bubsb']
+            'yelp': ['bub', 'bsb', 'bublb', 'bubsb'],
+            'imdb': []
         }
 
-        self.url = 'https://raw.githubusercontent.com/AndyJZhao/HGSL/master/data/%s/' % self.name
+        if self.name in ['acm', 'dblp', 'yelp']:
+            self.url = 'https://raw.githubusercontent.com/AndyJZhao/HGSL/master/data/%s/' % self.name
+        elif self.name in ['imdb']:
+            self.url = 'https://s3.cn-north-1.amazonaws.com.cn/dgl-data/dataset/openhgnn/%s4GTN.zip' % self.name
 
         if platform.system() == 'Windows':
             self.root = root
@@ -54,23 +59,21 @@ class HeteroDataset():
             self.root = osp.expanduser(osp.normpath(root))
 
             self.data_folder = osp.join(root, 'hetero_datasets', self.name) + '/'
-            if not osp.exists(self.data_folder):
-                os.makedirs(self.data_folder)
             self.feature_filename = self.data_folder + 'node_features.pkl'
             self.edge_filename = self.data_folder + 'edges.pkl'
             self.label_filename = self.data_folder + 'labels.pkl'
-            self.metadata_filename = self.data_folder + 'meta_data.pkl'
+            self.metadata_filename = self.data_folder + 'meta_data.pkl' if self.name in ['acm', 'dblp', 'yelp'] else None
 
             self.metadata = {}
             self.mp_emb_dict = {}
             self.features, self.adj, self.meta_path_emb, self.train_idx, self.train_y, \
             self.val_idx, self.val_y, self.test_idx, self.test_y = self.load_data()
-            self.metadata['n_meta_path_emb'] = list(self.meta_path_emb.values())[0].shape[1]
+            self.metadata['n_meta_path_emb'] = list(self.meta_path_emb.values())[0].shape[1] if len(self.meta_path_emb)!=0 else 0
 
         if dgl_heterograph:
             self.construct_dgl_graph()
 
-        if self.name in ['acm', 'dblp', 'yelp']:
+        if self.name in ['acm', 'dblp', 'yelp', 'imdb']:
             self.merge_labels()
             self.idx2mask()
 
@@ -130,12 +133,26 @@ class HeteroDataset():
                                          ('business', 'business-service', 'service'),
                                          ('service', 'service-business', 'business')]
                                }
+        elif self.name == 'imdb':
+            canonical_etypes = [('movie', 'movie-director', 'director'),
+                                ('director', 'director-movie', 'movie'),
+                                ('movie', 'movie-actor', 'actor'),
+                                ('actor', 'actor-movie', 'movie')]
+            target_ntype = 'movie'
+            meta_paths_dict = {'MAM': [('movie', 'movie-actor', 'actor'),
+                                       ('actor', 'actor-movie', 'movie')],
+                               'MDM': [('movie', 'movie-director', 'director'),
+                                       ('director', 'director-movie', 'movie')]
+                               }
         self.canonical_etypes = canonical_etypes
         self.target_ntype = target_ntype
         self.meta_paths_dict = meta_paths_dict
 
         node_features = self.features
-        edges = [v for k, v in self.edges.items()]
+        if isinstance(self.edges, dict):
+            edges = [v for k, v in self.edges.items()]
+        else:
+            edges = self.edges
         labels = self.labels
 
         num_nodes = edges[0].shape[0]
@@ -219,18 +236,32 @@ class HeteroDataset():
         print('Loading {} dataset...'.format(self.name))
 
         if self.name in ['acm', 'dblp', 'yelp']:
+            # TODO: check files individually to avoid repeated downloads
             if not osp.exists(self.feature_filename):
                 self.download_pkl()
+        elif self.name in ['imdb']:
+            if not osp.exists(self.feature_filename):
+                self.download_zip()
 
         features, adj, meta_path_emb, train_idx, train_y, val_idx, val_y, test_idx, test_y = self.get_adj()
         return features, adj, meta_path_emb, train_idx, train_y, val_idx, val_y, test_idx, test_y
+
+    def download_zip(self):
+        r"""Automatically download data and extract it."""
+        if self.url is not None:
+            zip_file_path = osp.join(self.root, 'hetero_datasets', self.name + ".zip")
+            download(self.url, path=zip_file_path)
+            extract_archive(zip_file_path, self.data_folder)
 
     def download_pkl(self):
         """Download adjacency matrix npz file from self.url.
         """
         print('Downloading from {} to {}'.format(self.url, self.data_folder))
         try:
-            for filename in ['node_features.pkl', 'edges.pkl', 'labels.pkl', 'meta_data.pkl']:
+            if not osp.exists(self.data_folder):
+                os.makedirs(self.data_folder)
+            filename_list = ['node_features.pkl', 'edges.pkl', 'labels.pkl', 'meta_data.pkl']
+            for filename in filename_list:
                 urllib.request.urlretrieve(self.url+filename, self.data_folder+filename)
             for mp in self.mp_list[self.name]:
                 mp_file_name = f'{mp}_emb.pkl'
@@ -246,8 +277,9 @@ class HeteroDataset():
             self.edges = pickle.load(f)
         with open(self.label_filename, 'rb') as f:
             self.labels = pickle.load(f)
-        with open(self.metadata_filename, 'rb') as f:
-            self.metadata.update(pickle.load(f))
+        if self.metadata_filename:
+            with open(self.metadata_filename, 'rb') as f:
+                self.metadata.update(pickle.load(f))
         if scipy.sparse.issparse(self.features):
             self.features = self.features.todense()
 
@@ -256,7 +288,10 @@ class HeteroDataset():
         features = torch.from_numpy(self.features).type(torch.FloatTensor)
         train_idx, train_y, val_idx, val_y, test_idx, test_y = self.get_label()
 
-        adj = np.sum(list(self.edges.values())).todense()
+        if isinstance(self.edges, dict):
+            adj = np.sum(list(self.edges.values())).todense()
+        else:
+            adj = np.sum(self.edges).todense()
         adj = torch.from_numpy(adj).type(torch.FloatTensor)
         adj = F.normalize(adj, dim=1, p=2)
 
@@ -317,7 +352,7 @@ if __name__ == '__main__':
     # from GSL.data import HeteroDataset
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     data_path = osp.join(osp.expanduser('~'), 'datasets')
-    data = HeteroDataset(root=data_path, name='yelp')
+    data = HeteroDataset(root=data_path, name='imdb', dgl_heterograph=True)
     adj, features, labels = data.adj, data.features, data.labels
     train_mask, val_mask, test_mask = data.train_mask, data.val_mask, data.test_mask
     meta_path_emb = data.meta_path_emb
