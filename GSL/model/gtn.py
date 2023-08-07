@@ -10,21 +10,21 @@ from GSL.utils import *
 
 
 class GTN(BaseModel):
-    def __init__(self, device, config, hg, num_edge_type, in_dim, num_class, category):
-        super(GTN, self).__init__(device=device)
-        self.config = config
-        self.num_channels = config.num_channels
-        self.in_dim = in_dim
-        self.hid_dim = config.hid_dim
-        self.num_class = num_class
-        self.num_layers = config.num_layers
-        self.is_norm = config.is_norm
-        self.category = category
-        self.identity = config.identity
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, data):
+        super(GTN, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
+        self.num_channels = self.config.num_channels
+        self.in_dim = self.config.hid_dim
+        self.hid_dim = self.config.hid_dim
+        self.num_class = data.num_class
+        self.num_layers = self.config.num_layers
+        self.is_norm = self.config.is_norm
+        self.category = data.target_ntype
+        self.identity = self.config.identity
+        num_edge_type = len(data.edges)
         if self.identity:
             num_edge_type += 1
         self.num_edge_type = num_edge_type
-        self.hg = hg
+        self.hg = data.g
 
         layers = []
         for i in range(self.num_layers):
@@ -89,7 +89,7 @@ class GTN(BaseModel):
 
     def eval_logits(self, logits, target_x, target_y):
         pred_y = torch.argmax(logits[target_x], dim=1)
-        return torch_f1_score(pred_y, target_y, n_class=logits.shape[1])
+        return macro_f1(pred_y, target_y, n_class=logits.shape[1]), micro_f1(pred_y, target_y, n_class=logits.shape[1])
 
     def init_feature(self, act):
         # self.logger.feature_info("Feat is 0, nothing to do!")
@@ -103,7 +103,8 @@ class GTN(BaseModel):
                                             self.config.hid_dim, act=act).to(self.device)
         return input_feature
 
-    def fit(self, labels, train_idx, val_idx):
+    def fit(self, data):
+        labels, train_idx, val_idx, test_idx = data.labels, data.train_idx, data.val_idx, data.test_idx
         self.optimizer = torch.optim.Adam([{'params': self.gcn.parameters()},
                                            {'params': self.linear1.parameters()},
                                            {'params': self.linear2.parameters()},
@@ -113,11 +114,9 @@ class GTN(BaseModel):
         self.optimizer.add_param_group({'params': self.input_feature.parameters()})
         self.add_module('input_feature', self.input_feature)
         self.stopper = EarlyStopping(patience=self.config.early_stop)
-        # cla_loss = torch.nn.NLLLoss()
         cla_loss = F.cross_entropy
 
         dur = []
-        # w_list = []
         for epoch in range(self.config.epochs):
             # ! Train
             t0 = time.time()
@@ -126,8 +125,7 @@ class GTN(BaseModel):
             logits = self.forward(self.hg, h_dict)[self.category]
             train_f1, train_mif1 = self.eval_logits(logits, train_idx, labels[train_idx])
 
-            l_pred = cla_loss(logits[train_idx], labels[train_idx])
-            loss = l_pred
+            loss = cla_loss(logits[train_idx], labels[train_idx])
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -140,41 +138,39 @@ class GTN(BaseModel):
                 h_dict = {k: e.to(self.device) for k, e in h_dict.items()}
                 logits = self.forward(self.hg, h_dict)[self.category]
                 val_f1, val_mif1 = self.eval_logits(logits, val_idx, labels[val_idx])
+                val_loss = cla_loss(logits[val_idx], labels[val_idx]).item()
             dur.append(time.time() - t0)
             print(
-                f"Epoch {epoch:05d} | Time(s) {np.mean(dur):.4f} | Loss {loss.item():.4f} | TrainF1 {train_f1:.4f} | ValF1 {val_f1:.4f}")
+                f"Epoch {epoch:05d} | Time(s) {np.mean(dur):.4f} | Train Loss {loss.item():.4f} | TrainF1 {train_f1:.4f} | ValF1 {val_f1:.4f}")
 
             if self.config.early_stop > 0:
-                if self.stopper.step(val_f1, self, epoch):
+                if self.stopper.loss_step(val_loss, self, epoch):
                     print(f'Early stopped, loading model from epoch-{self.stopper.best_epoch}')
                     break
 
         if self.config.early_stop > 0:
             self.load_state_dict(self.stopper.best_weight)
+        self.test(labels, val_idx, test_idx)
 
     def test(self, labels, val_idx, test_idx):
         with torch.no_grad():
             h_dict = self.input_feature()
             h_dict = {k: e.to(self.device) for k, e in h_dict.items()}
             logits = self.forward(self.hg, h_dict)[self.category]
-            self.eval_and_save(logits, test_idx, labels[test_idx], val_idx, labels[val_idx])
-
-    def eval_and_save(self, logits, test_x, test_y, val_x, val_y, res={}):
-        test_f1, test_mif1 = self.eval_logits(logits, test_x, test_y)
-        val_f1, val_mif1 = self.eval_logits(logits, val_x, val_y)
-        self.save_results(test_f1, val_f1, test_mif1, val_mif1, res)
-
-    def save_results(self, test_f1, val_f1, test_mif1=0, val_mif1=0, res={}):
-        if self.stopper != None:
-            res.update({'test_f1': f'{test_f1:.4f}', 'test_mif1': f'{test_mif1:.4f}',
-                        'val_f1': f'{val_f1:.4f}', 'val_mif1': f'{val_mif1:.4f}',
-                        'best_epoch': self.stopper.best_epoch})
-        else:
-            res.update({'test_f1': f'{test_f1:.4f}', 'test_mif1': f'{test_mif1:.4f}',
-                        'val_f1': f'{val_f1:.4f}', 'val_mif1': f'{val_mif1:.4f}'})
-        # print(f"Seed{self.config.seed}")
-        res_dict = {'res': res}
-        print(f'\n\n\nTrain finished, results:{res_dict}')
+            test_f1, test_mif1 = self.eval_logits(logits, test_idx, labels[test_idx])
+            val_f1, val_mif1 = self.eval_logits(logits, val_idx, labels[val_idx])
+            res = {}
+            if self.stopper != None:
+                res.update({'test_f1': f'{test_f1:.4f}', 'test_mif1': f'{test_mif1:.4f}',
+                            'val_f1': f'{val_f1:.4f}', 'val_mif1': f'{val_mif1:.4f}',
+                            'best_epoch': self.stopper.best_epoch})
+            else:
+                res.update({'test_f1': f'{test_f1:.4f}', 'test_mif1': f'{test_mif1:.4f}',
+                            'val_f1': f'{val_f1:.4f}', 'val_mif1': f'{val_mif1:.4f}'})
+            # print(f"Seed{self.config.seed}")
+            res_dict = {'res': res}
+            print(f'results:{res_dict}')
+            self.best_result = test_f1.item()
 
 class GTLayer(nn.Module):
     def __init__(self, in_channels, out_channels, first=True):

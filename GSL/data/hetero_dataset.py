@@ -35,7 +35,7 @@ class HeteroDataset():
     # >>> meta_path_emb = data.meta_path_emb
     """
 
-    def __init__(self, root, name, dgl_heterograph=False):
+    def __init__(self, root, name):
         self.name = name.lower()
 
         assert self.name in ['acm', 'dblp', 'yelp', 'imdb'], \
@@ -70,8 +70,7 @@ class HeteroDataset():
             self.val_idx, self.val_y, self.test_idx, self.test_y = self.load_data()
             self.metadata['n_meta_path_emb'] = list(self.meta_path_emb.values())[0].shape[1] if len(self.meta_path_emb)!=0 else 0
 
-        if dgl_heterograph:
-            self.construct_dgl_graph()
+        self.construct_dgl_graph()
 
         if self.name in ['acm', 'dblp', 'yelp', 'imdb']:
             self.merge_labels()
@@ -210,7 +209,6 @@ class HeteroDataset():
             g.nodes[ntype].data['h'] = node_features[idx]
 
         self.g = g
-        self.num_classes = len(torch.unique(self.g.nodes[self.target_ntype].data['label']))
         self.in_dim = self.g.ndata['h'][self.target_ntype].shape[1]
 
     def idx2mask(self):
@@ -352,7 +350,7 @@ if __name__ == '__main__':
     # from GSL.data import HeteroDataset
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     data_path = osp.join(osp.expanduser('~'), 'datasets')
-    data = HeteroDataset(root=data_path, name='imdb', dgl_heterograph=True)
+    data = HeteroDataset(root=data_path, name='imdb')
     adj, features, labels = data.adj, data.features, data.labels
     train_mask, val_mask, test_mask = data.train_mask, data.val_mask, data.test_mask
     meta_path_emb = data.meta_path_emb

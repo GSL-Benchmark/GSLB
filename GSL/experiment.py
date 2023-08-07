@@ -51,7 +51,7 @@ class Experiment(object):
         if self.dataset_name in ['cora', 'citeseer', 'pubmed', 'ogbn-arxiv',
                                  'cornell', 'texas', 'wisconsin', 'actor']:
             self.data = Dataset(root=data_path, name=self.dataset_name, use_mettack=use_mettack, ptb_rate=ptb_rate)
-        elif self.dataset_name in ['acm', 'dblp', 'yelp']:
+        elif self.dataset_name in ['acm', 'dblp', 'yelp', 'imdb']:
             self.data = HeteroDataset(root=data_path, name=self.dataset_name)
         elif self.dataset_name in ['imdb-b', 'imdb-m', 'collab', 'reddit-b', 'mutag',
                                    'proteins', 'peptides-func', 'peptides-struct']:
@@ -83,6 +83,11 @@ class Experiment(object):
             else:
                 self.data.adj = sparse_mx_to_torch_sparse_tensor(adj)
 
+        if isinstance(self.data, GraphDataset):
+            self.data = self.data.dgl_dataset
+        else:
+            self.data = self.data.to(self.device)
+
         # Select the metric of evaluation
         self.eval_metric = {
             'acc': accuracy,
@@ -102,17 +107,14 @@ class Experiment(object):
             seed_everything(i)
 
             # Initialize the GSL model
-            if self.model_name in ['SLAPS', 'CoGSL', 'HGSL']:
+            if self.model_name in ['SLAPS', 'CoGSL', 'HGSL', 'GTN']:
                 model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,
                                                          self.config_path, self.dataset_name, self.device, self.data) # TODO modify the config according to the search space
             else:
                 model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,
                                                          self.config_path, self.dataset_name, self.device, params)
             self.model = model.to(self.device)
-            if isinstance(self.data, GraphDataset):
-                self.data = self.data.dgl_dataset
-            else:
-                self.data = self.data.to(self.device)
+
 
             # Structure Learning
             self.model.fit(self.data)

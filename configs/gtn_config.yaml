@@ -17,17 +17,26 @@ acm:
 
 dblp:
   dataset: 'dblp'
-  num_layers: 2
+  num_layers: 3
   epochs: 100
   lr: 0.005
   num_channels: 2
-  hid_dim: 64
+  hid_dim: 128
   identity: 1
 
 yelp:
   dataset: 'yelp'
   num_layers: 1
   epochs: 100
+  lr: 0.005
+  num_channels: 2
+  hid_dim: 128
+  identity: 1
+
+imdb:
+  dataset: 'imdb'
+  num_layers: 2
+  epochs: 150
   lr: 0.005
   num_channels: 2
   hid_dim: 128
