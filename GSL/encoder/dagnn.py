@@ -1,60 +1,107 @@
-from torch_geometric.nn.conv import MessagePassing
-from torch_geometric.nn.conv.gcn_conv import gcn_norm
-from torch.nn import Linear
 import torch
-import torch.nn.functional as F
+from torch import nn
+from torch.nn import functional as F, Parameter
+import dgl.function as fn
 
 
-class Prop(MessagePassing):
-    def __init__(self, num_classes, K, bias=True, **kwargs):
-        super(Prop, self).__init__(aggr='add', **kwargs)
-        self.K = K
-        self.proj = Linear(num_classes, 1)
-        
-    def forward(self, x, edge_index, edge_weight=None):
-        edge_index, norm = gcn_norm(edge_index, edge_weight, x.size(0), dtype=x.dtype)
+class DAGNNConv(nn.Module):
+    def __init__(self, in_dim, k):
+        super(DAGNNConv, self).__init__()
 
-        preds = []
-        preds.append(x)
-        for k in range(self.K):
-            x = self.propagate(edge_index, x=x, norm=norm)
-            preds.append(x)
-           
-        pps = torch.stack(preds, dim=1)
-        retain_score = self.proj(pps)
-        retain_score = retain_score.squeeze()
-        retain_score = torch.sigmoid(retain_score)
-        retain_score = retain_score.unsqueeze(1)
-        out = torch.matmul(retain_score, pps).squeeze()
-        return out
-    
-    def message(self, x_j, norm):
-        return norm.view(-1, 1) * x_j
+        self.s = Parameter(torch.FloatTensor(in_dim, 1))
+        self.k = k
 
-    def __repr__(self):
-        return '{}(K={})'.format(self.__class__.__name__, self.K)
-    
+        self.reset_parameters()
+
     def reset_parameters(self):
-        self.proj.reset_parameters()
+        gain = nn.init.calculate_gain("sigmoid")
+        nn.init.xavier_uniform_(self.s, gain=gain)
+
+    def forward(self, graph, feats):
+        with graph.local_scope():
+            results = [feats]
+
+            degs = graph.in_degrees().float()
+            norm = torch.pow(degs, -0.5)
+            norm = norm.to(feats.device).unsqueeze(1)
+
+            for _ in range(self.k):
+                feats = feats * norm
+                graph.ndata["h"] = feats
+                graph.update_all(fn.copy_u("h", "m"), fn.sum("m", "h"))
+                feats = graph.ndata["h"]
+                feats = feats * norm
+                results.append(feats)
+
+            H = torch.stack(results, dim=1)
+            S = F.sigmoid(torch.matmul(H, self.s))
+            S = S.permute(0, 2, 1)
+            H = torch.matmul(S, H).squeeze()
+
+            return H
 
 
-class DAGNN(torch.nn.Module):
-    def __init__(self, num_features, num_classes, hidden, K, dropout):
+class MLPLayer(nn.Module):
+    def __init__(self, in_dim, out_dim, bias=True, activation=None, dropout=0):
+        super(MLPLayer, self).__init__()
+
+        self.linear = nn.Linear(in_dim, out_dim, bias=bias)
+        self.activation = activation
+        self.dropout = nn.Dropout(dropout)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        gain = 1.0
+        if self.activation is F.relu:
+            gain = nn.init.calculate_gain("relu")
+        nn.init.xavier_uniform_(self.linear.weight, gain=gain)
+        if self.linear.bias is not None:
+            nn.init.zeros_(self.linear.bias)
+
+    def forward(self, feats):
+        feats = self.dropout(feats)
+        feats = self.linear(feats)
+        if self.activation:
+            feats = self.activation(feats)
+
+        return feats
+
+
+class DAGNN(nn.Module):
+    def __init__(
+        self,
+        k,
+        in_dim,
+        hid_dim,
+        out_dim,
+        bias=True,
+        activation=F.relu,
+        dropout=0,
+    ):
         super(DAGNN, self).__init__()
-        self.lin1 = Linear(num_features, hidden)
-        self.lin2 = Linear(hidden, num_classes)
-        self.prop = Prop(num_classes, K)
-        self.dropout = dropout
+        self.mlp = nn.ModuleList()
+        self.mlp.append(
+            MLPLayer(
+                in_dim=in_dim,
+                out_dim=hid_dim,
+                bias=bias,
+                activation=activation,
+                dropout=dropout,
+            )
+        )
+        self.mlp.append(
+            MLPLayer(
+                in_dim=hid_dim,
+                out_dim=out_dim,
+                bias=bias,
+                activation=None,
+                dropout=dropout,
+            )
+        )
+        self.dagnn = DAGNNConv(in_dim=out_dim, k=k)
 
-    def reset_parameters(self):
-        self.lin1.reset_parameters()
-        self.lin2.reset_parameters()
-        self.prop.reset_parameters()
-
-    def forward(self, x, edge_index):
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        x = F.relu(self.lin1(x))
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        x = self.lin2(x)
-        x = self.prop(x, edge_index)
-        return F.log_softmax(x, dim=1)
+    def forward(self, graph, feats):
+        for layer in self.mlp:
+            feats = layer(feats)
+        feats = self.dagnn(graph, feats)
+        return feats

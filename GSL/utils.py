@@ -1013,3 +1013,9 @@ def global_topk(input, k, largest):
     # https://stackoverflow.com/questions/64241325/top-k-indices-of-a-multi-dimensional-tensor
     v, i = torch.topk(input.flatten(), k, largest=largest)
     return np.array(np.unravel_index(i.cpu().numpy(), input.shape)).T.tolist()
+
+
+def adjacency_matrix_to_dgl(adj):
+    src, dst = np.nonzero(adj.cpu().numpy())
+    graph = dgl.graph((src, dst))
+    return graph

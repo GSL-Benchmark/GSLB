@@ -3,18 +3,16 @@ import torch.nn.functional as F
 import numpy as np
 from torch.nn import Parameter
 
-from torch_geometric.nn import MessagePassing, APPNP
 from torch.nn import Linear
-from torch_geometric.nn.conv.gcn_conv import gcn_norm
+import dgl.function as fn
 
 
-class GPR_prop(MessagePassing):
+class GPR_prop(torch.nn.Module):
     '''
     propagation class for GPR_GNN
     '''
-
     def __init__(self, K, alpha, Init, Gamma=None, bias=True, **kwargs):
-        super(GPR_prop, self).__init__(aggr='add', **kwargs)
+        super(GPR_prop, self).__init__(**kwargs)
         self.K = K
         self.Init = Init
         self.alpha = alpha
@@ -63,19 +61,23 @@ class GPR_prop(MessagePassing):
         elif self.Init == 'WS':
             self.temp.data = self.Gamma
 
-    def forward(self, x, edge_index, edge_weight=None):
-        edge_index, norm = gcn_norm(
-            edge_index, edge_weight, num_nodes=x.size(0), dtype=x.dtype)
+    def forward(self, graph, feats):
+        with graph.local_scope():
+            degs = graph.in_degrees().float()
+            norm = torch.pow(degs, -0.5)
+            norm = norm.to(feats.device).unsqueeze(1)
 
-        hidden = x*(self.temp[0])
-        for k in range(self.K):
-            x = self.propagate(edge_index, x=x, norm=norm)
-            gamma = self.temp[k+1]
-            hidden = hidden + gamma*x
+            hidden = feats*(self.temp[0])
+            for k in range(self.K):
+                feats = feats * norm
+                graph.ndata["h"] = feats
+                graph.update_all(fn.copy_u("h", "m"), fn.sum("m", "h"))
+                feats = graph.ndata["h"]
+                feats = feats * norm
+                gamma = self.temp[k+1]
+                hidden = hidden + gamma*feats
+
         return hidden
-
-    def message(self, x_j, norm):
-        return norm.view(-1, 1) * x_j
 
     def __repr__(self):
         return '{}(K={}, temp={})'.format(self.__class__.__name__, self.K,
@@ -88,9 +90,7 @@ class GPRGNN(torch.nn.Module):
         self.lin1 = Linear(num_feat, hidden)
         self.lin2 = Linear(hidden, num_class)
 
-        if ppnp == 'PPNP':
-            self.prop1 = APPNP(K, alpha)
-        elif ppnp == 'GPR_prop':
+        if ppnp == 'GPR_prop':
             self.prop1 = GPR_prop(K, alpha, Init, Gamma)
 
         self.Init = Init
@@ -100,17 +100,17 @@ class GPRGNN(torch.nn.Module):
     def reset_parameters(self):
         self.prop1.reset_parameters()
 
-    def forward(self, x, edge_index):
+    def forward(self, graph, features):
 
-        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = F.dropout(features, p=self.dropout, training=self.training)
         x = F.relu(self.lin1(x))
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = self.lin2(x)
 
         if self.dprate == 0.0:
-            x = self.prop1(x, edge_index)
+            x = self.prop1(graph, x)
             return F.log_softmax(x, dim=1)
         else:
             x = F.dropout(x, p=self.dprate, training=self.training)
-            x = self.prop1(x, edge_index)
+            x = self.prop1(graph, x)
             return F.log_softmax(x, dim=1)

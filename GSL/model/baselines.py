@@ -1,6 +1,6 @@
 from GSL.model import BaseModel
 from GSL.encoder import GCN, GPRGNN, DAGNN
-from GSL.utils import row_normalize_features, dense_adj_to_edge_index
+from GSL.utils import *
 
 import torch
 import torch.nn.functional as F
@@ -141,7 +141,9 @@ class GPRGNN_Trainer(BaseModel):
         else:
             train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
 
-        edge_index = dense_adj_to_edge_index(adj)
+        g = adjacency_matrix_to_dgl(adj)
+        g = g.add_self_loop()
+        g = g.to(self.device)
 
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
 
@@ -150,7 +152,7 @@ class GPRGNN_Trainer(BaseModel):
             self.train()
             optimizer.zero_grad()
 
-            output = self.model(features, edge_index)
+            output = self.model(g, features)
             loss = F.cross_entropy(output[train_mask], labels[train_mask])
 
             loss.backward()
@@ -158,7 +160,7 @@ class GPRGNN_Trainer(BaseModel):
 
             with torch.no_grad():
                 self.eval()
-                output = self.model(features, edge_index)
+                output = self.model(g, features)
                 train_result = self.metric(output[train_mask], labels[train_mask])
                 val_result = self.metric(output[val_mask], labels[val_mask])
                 test_result = self.metric(output[test_mask], labels[test_mask])
@@ -174,17 +176,16 @@ class GPRGNN_Trainer(BaseModel):
                 best_val = val_result
                 best_result = test_result
 
-        print('Best Test Result: ', best_result.item())
         self.best_result = best_result.item()
 
 
 class DAGNN_Trainer(BaseModel):
     def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, params):
         super(DAGNN_Trainer, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device, params)
-        self.model = DAGNN(num_features=num_features,
-                           num_classes=num_classes,
-                           hidden=self.config.hidden,
-                           K=self.config.K,
+        self.model = DAGNN(k=self.config.K,
+                           in_dim=num_features,
+                           hid_dim=self.config.hidden,
+                           out_dim=num_classes,
                            dropout=self.config.dropout)
         
     def fit(self, dataset, split_num=0):
@@ -196,7 +197,9 @@ class DAGNN_Trainer(BaseModel):
         else:
             train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
 
-        edge_index = dense_adj_to_edge_index(adj)
+        g = adjacency_matrix_to_dgl(adj)
+        g = g.add_self_loop()
+        g = g.to(self.device)
 
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
 
@@ -205,7 +208,7 @@ class DAGNN_Trainer(BaseModel):
             self.train()
             optimizer.zero_grad()
 
-            output = self.model(features, edge_index)
+            output = self.model(g, features)
             loss = F.cross_entropy(output[train_mask], labels[train_mask])
 
             loss.backward()
@@ -213,7 +216,7 @@ class DAGNN_Trainer(BaseModel):
 
             with torch.no_grad():
                 self.eval()
-                output = self.model(features, edge_index)
+                output = self.model(g, features)
                 train_result = self.metric(output[train_mask], labels[train_mask])
                 val_result = self.metric(output[val_mask], labels[val_mask])
                 test_result = self.metric(output[test_mask], labels[test_mask])
@@ -229,5 +232,4 @@ class DAGNN_Trainer(BaseModel):
                 best_val = val_result
                 best_result = test_result
 
-        print('Best Test Result: ', best_result.item())
         self.best_result = best_result.item()
