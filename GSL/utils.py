@@ -6,6 +6,7 @@ import random
 import shutil
 import time
 from copy import deepcopy
+from typing import NamedTuple
 
 import dgl
 import easydict
@@ -21,6 +22,8 @@ import yaml
 from dgl.data import DGLDataset
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold, train_test_split
+from math import sqrt
+
 
 from GSL.metric import CosineSimilarity
 from GSL.processor import KNearestNeighbour
@@ -663,7 +666,7 @@ def k_fold(dataset, folds, seed):
             test_indices.append(torch.from_numpy(idx).to(torch.long))
     elif isinstance(dataset, list):
         for _, idx in skf.split(
-            torch.zeros(len(dataset)), [data.y for data in dataset]
+            torch.zeros(len(dataset)), [data.labels for data in dataset]
         ):
             test_indices.append(torch.from_numpy(idx).to(torch.long))
 
@@ -1052,3 +1055,175 @@ def adjacency_matrix_to_dgl(adj):
     src, dst = np.nonzero(adj.cpu().numpy())
     graph = dgl.graph((src, dst))
     return graph
+
+
+class Metrics(NamedTuple):
+    loss: float
+    acc: float
+
+
+
+def empirical_mean_loss(gcn,
+                        graph_model,
+                        n_samples,
+                        data,
+                        model_parameters):
+    """
+    Convenience function to calculate estimated loss/ accuracy for a specific graph distribution.
+    :param gcn: GCN Model to use.
+    :param graph_model: function to sample a new graph
+    :param n_samples: Number of samples used. Higher numbers lead to better estimates
+    :param data: Planetoid graph dataset_name (Cora or Citeseer) # TODO: Use InMemoryDataset if possible
+    :param model_parameters: GCN parameters
+    :return: Dictionary containing loss and accuracy
+    """
+    gcn.eval()
+    graph_model.eval()
+    with torch.no_grad():
+        val_losses = []
+        val_accuracies = []
+        test_losses = []
+        test_accuracies = []
+        for _ in range(n_samples):
+            graph = graph_model.sample()
+            predictions = gcn(data.features, graph)
+
+            val_losses.append(F.nll_loss(predictions[data.val_mask], data.labels[data.val_mask]).item())
+            val_accuracies.append(accuracy(predictions[data.val_mask], data.labels[data.val_mask]))
+
+            test_losses.append(F.nll_loss(predictions[data.test_mask], data.labels[data.test_mask]).item())
+            test_accuracies.append(accuracy(predictions[data.test_mask], data.labels[data.test_mask]))
+
+    val_metrics = Metrics(loss=np.mean(val_losses).item(), acc=np.mean(val_accuracies).item())
+    test_metrics = Metrics(loss=np.mean(test_losses).item(), acc=np.mean(test_accuracies).item())
+    return val_metrics, test_metrics
+
+
+def dirichlet_energy(adj, features):
+    degree_matrix = adj.sum(dim=1).diag()
+    laplacian = degree_matrix - adj
+    smoothness_matrix = features.t() @ laplacian @ features
+    loss = smoothness_matrix.trace() / adj.numel()
+    # noinspection Mypy
+    return loss
+
+
+def disconnection_loss(adj):
+    # noinspection Mypy
+    return -adj.size(0) * (adj.sum(dim=1) + 10e-8).log().sum()
+
+
+def sparsity_loss(adj):
+    frob_norm_squared = (adj * adj).sum()
+    return frob_norm_squared / adj.numel()
+
+
+def graph_regularization(graph,
+                         features,
+                         smoothness_factor: float,
+                         disconnection_factor: float,
+                         sparsity_factor: float,
+                         log=True
+                         ):
+    _smoothness_loss = dirichlet_energy(graph, features=features)
+    _disconnection_loss = disconnection_loss(graph)
+    _sparsity_loss = sparsity_loss(graph)
+
+    return smoothness_factor * _smoothness_loss + \
+           disconnection_factor * _disconnection_loss + \
+           sparsity_factor * _sparsity_loss
+
+
+def get_lr(optimizer):
+    return [group['lr'] for group in optimizer.param_groups]
+
+
+def is_square_matrix(tensor: torch.Tensor) -> bool:
+    return len(tensor.size()) == 2 and tensor.size(0) == tensor.size(1)
+
+
+def to_undirected(adj: torch.Tensor,
+                from_triu_only: bool = False) -> torch.Tensor:
+    assert is_square_matrix(adj)
+
+    if not from_triu_only:
+        result = torch.max(adj, adj.t())
+        #result = (adj + adj.t()).clamp(0.0, 1.0)  # TODO Does not work for weighted graphs
+    else:
+        triu = adj.triu(1)
+        samples_without_self_loops = triu + triu.t()
+        result = samples_without_self_loops + torch.diag(adj.diag())
+    return result
+
+
+def straight_through_estimator(sample,
+                            parameters):
+    assert sample.size() == parameters.size()
+    return (sample - parameters).detach() + parameters
+
+
+def get_triu_values(adj: torch.Tensor) -> torch.Tensor:
+    assert adj.size(0) == adj.size(1)
+    n_nodes = adj.size(0)
+    indices = torch.triu_indices(n_nodes, n_nodes, device=adj.device)
+    return adj[indices[0], indices[1]]
+
+
+def split_mask(mask: torch.Tensor,
+               ratio: float = 0.5,
+               shuffle: bool = True,
+               device='cuda'):
+    """
+    Splits the specified mask into two parts. Can be used to extract a (random) subset of the validation set only used
+    to optimize some other loss/ parameters.
+    :param mask: Tensor with shape [N_NODES] with dtype torch.bool
+    :param ratio: Proportion of validation samples in first subset (range: 0.0-1.0)
+    :param shuffle: whether splits contain random samples from validation set
+    :param device: device on which new tensors are stored
+    :return: Tuple with both new masks
+    """
+    nonzero_indices = mask.nonzero()
+
+    if shuffle:
+        shuffled_indices = np.arange(nonzero_indices.size(0))
+        np.random.shuffle(shuffled_indices)
+        nonzero_indices = nonzero_indices[shuffled_indices]
+
+    split_index = int(nonzero_indices.size(0) * ratio)
+    first_part_indices = nonzero_indices[:split_index]
+    second_part_indices = nonzero_indices[split_index:]
+
+    first_mask = torch.zeros_like(mask, dtype=torch.bool, device=device)
+    first_mask[first_part_indices] = 1
+    second_mask = torch.zeros_like(mask, dtype=torch.bool, device=device)
+    second_mask[second_part_indices] = 1
+    return first_mask, second_mask
+
+
+def num_nodes_from_triu_shape(n_triu_values: int) -> int:
+    """
+    A (slightly hacky) way to calculate the number of nodes in the original graph given the number of nodes in the
+    upper/ lower triangular matrix
+    :param n_triu_values: Number of nodes in triangular matrix
+    :return: Number of nodes in graph
+    """
+    n_nodes = int(0.5 * sqrt((8 * n_triu_values + 1) - 1))
+    return n_nodes
+
+
+def triu_values_to_symmetric_matrix(triu_values):
+    """
+    Given the flattened tensor of values in the triangular matrix, constructs a symmetric adjacency matrix
+    :param triu_values: Flattened tensor of shape (TRIANG_N,)
+    :return: Symmetric adjacency matrix of shape (N, N)
+    """
+    assert len(triu_values.size()) == 1
+    n_nodes = num_nodes_from_triu_shape(triu_values.size(0))
+    indices = torch.triu_indices(n_nodes, n_nodes, device=triu_values.device)
+    adj = torch.zeros((n_nodes, n_nodes), device=triu_values.device)
+    adj[indices[0], indices[1]] = triu_values
+
+    adj = to_undirected(adj, from_triu_only=True)
+
+    adj = adj.clamp(0.0, 1.0)
+    return adj
