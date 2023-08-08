@@ -62,7 +62,7 @@ class HeteroDataset():
             self.feature_filename = self.data_folder + 'node_features.pkl'
             self.edge_filename = self.data_folder + 'edges.pkl'
             self.label_filename = self.data_folder + 'labels.pkl'
-            self.metadata_filename = self.data_folder + 'meta_data.pkl' if self.name in ['acm', 'dblp', 'yelp'] else None
+            self.metadata_filename = self.data_folder + 'meta_data.pkl' if self.name in ['acm', 'dblp', 'yelp', 'imdb'] else None
 
             self.metadata = {}
             self.mp_emb_dict = {}
