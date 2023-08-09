@@ -43,7 +43,7 @@ class Experiment(object):
         self.model_dict = {
             'GCN': GCN_Trainer, 'MLP': MLP_Trainer, 'GPRGNN': GPRGNN_Trainer, 'DAGNN': DAGNN_Trainer, 'GRCN': GRCN, 'ProGNN': ProGNN, 'IDGL': IDGL,
             'SLAPS': SLAPS, 'SUBLIME': SUBLIME, 'STABLE': STABLE, 'GTN': GTN, 'HGSL': HGSL, 'CoGSL': CoGSL, 'GEN': GEN,
-            'HGPSL': HGPSL, 'VIBGSL': VIBGSL, 'HESGSL': HESGSL, 'GSR': GSR, 'NodeFormer': NodeFormer
+            'HGPSL': HGPSL, 'VIBGSL': VIBGSL, 'HESGSL': HESGSL, 'GSR': GSR, 'NodeFormer': NodeFormer, 'LDS': LDS,
         }
 
         # Load graph datasets

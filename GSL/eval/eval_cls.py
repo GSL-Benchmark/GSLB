@@ -14,7 +14,7 @@ class ClsEvaluator:
                              self.config.dropout_eval, self.config.dropedge_rate_eval, self.config.sparse)
             self.model = self.model.to(device)
         else:
-            raise Exception('We dont support the GNN model')
+            raise Exception("We don't support the GNN model")
 
     def compute_loss_acc(self, model, features, adj, mask, labels):
         logits = model(features, adj)

@@ -97,7 +97,7 @@ class SparseDropout(nn.Module):
 
 
 class GCN(nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, dropout_adj, sparse, residual=False, activation_last=None, conv_bias=False, bn=False):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, dropout_adj, sparse=False, residual=False, activation_last=None, conv_bias=False, bn=False):
         super(GCN, self).__init__()
 
         self.residual = residual
@@ -162,6 +162,13 @@ class GCN(nn.Module):
         if return_hidden:
             return tuple(outputs)
         return x
+    
+
+    def reset_parameters(self):
+        for conv in self.layers:
+            conv.init_para()
+
+
 
 
 class GCN_dgl(nn.Module):
