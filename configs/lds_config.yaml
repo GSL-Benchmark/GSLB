@@ -14,6 +14,8 @@ Default:
   disconnection_factor: 0.0
   sparsity_factor: 0.0
   n_samples_empirical_mean: 16
+  activation_last: 'log_softmax'
+  normalize_adj: True
 
 
 cora:
