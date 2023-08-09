@@ -1,0 +1,42 @@
+Default:
+  early_stop: 100
+  model: 'HAN'
+  weight_decay: 0.001
+
+acm:
+  dataset: 'acm'
+  dropout: 0.46
+  hid_dim: 128
+  lr: 0.01
+  epochs: 200
+  early_stop: 100
+  weight_decay: 0.001
+
+#dblp:
+#  dataset: 'dblp'
+#  dropout: 0.46
+#  hid_dim: 128
+#  lr: 0.01
+#  epochs: 200
+#  early_stop: 100
+#  weight_decay: 0.001
+#
+#
+#yelp:
+#  dataset: 'yelp'
+#  dropout: 0.46
+#  hid_dim: 128
+#  lr: 0.01
+#  epochs: 200
+#  early_stop: 100
+#  weight_decay: 0.001
+#
+#
+#imdb:
+#  dataset: 'imdb'
+#  dropout: 0.46
+#  hid_dim: 128
+#  lr: 0.01
+#  epochs: 200
+#  early_stop: 100
+#  weight_decay: 0.001
