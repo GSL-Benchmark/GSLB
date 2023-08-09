@@ -44,3 +44,13 @@ yelp:
   mp_list: ['bub', 'bsb', 'bublb', 'bubsb']
   data_type: 'busl'
   relation_list: 'b-u+u-b+b-s+s-b+b-l+l-b'
+
+imdb:
+  alpha: 1
+  dropout: 0
+  fgd_th: 0.8
+  fgh_th: 0.2
+  sem_th: 0.6
+  mp_list: []
+  data_type: 'mda'
+  relation_list: 'm-d+d-m+m-a+a-m'

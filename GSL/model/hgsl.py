@@ -38,7 +38,10 @@ class HGSL(BaseModel):
             self.sg_agg[r] = GraphChannelAttLayer(len(self.config.mp_list))
 
             # ! Overall Graph Generator
-            self.overall_g_agg[r] = GraphChannelAttLayer(3, [1, 1, 10])  # 3 = feat-graph + sem-graph + ori_graph
+            if len(data.meta_path_emb) > 0:
+                self.overall_g_agg[r] = GraphChannelAttLayer(3, [1, 1, 10])  # 3 = feat-graph + sem-graph + ori_graph
+            else:
+                self.overall_g_agg[r] = GraphChannelAttLayer(2, [1, 1, 10])  # 2 = feat-graph + ori_graph
 
         # ! Graph Convolution
         if self.config.conv_method == 'gcn':
@@ -141,11 +144,16 @@ class HGSL(BaseModel):
 
             # ! Semantic Graph Generation
             sem_g_list = [gen_g_via_feat(self.sgg_gen[r][mp], mp_emb[mp], r) for mp in mp_emb]
-            sem_g = self.sg_agg[r](sem_g_list)
-            # ! Overall Graph
-            # Update relation sub-matixs
-            new_adj[self.ri[r][0]:self.ri[r][1], self.ri[r][2]:self.ri[r][3]] = \
-                self.overall_g_agg[r]([feat_g, sem_g, ori_g])  # update edge  e.g. AP
+            if len(sem_g_list) > 0:
+                sem_g = self.sg_agg[r](sem_g_list)
+                # ! Overall Graph
+                # Update relation sub-matixs
+                new_adj[self.ri[r][0]:self.ri[r][1], self.ri[r][2]:self.ri[r][3]] = \
+                    self.overall_g_agg[r]([feat_g, sem_g, ori_g])  # update edge  e.g. AP
+            else:
+                new_adj[self.ri[r][0]:self.ri[r][1], self.ri[r][2]:self.ri[r][3]] = \
+                    self.overall_g_agg[r]([feat_g, ori_g])  # update edge  e.g. AP
+
 
         new_adj += new_adj.clone().t()  # sysmetric
         # ! Aggregate

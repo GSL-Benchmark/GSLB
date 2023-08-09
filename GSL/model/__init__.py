@@ -17,6 +17,7 @@ from .hesgsl import HESGSL
 from .baselines import GCN_Trainer, MLP_Trainer, GPRGNN_Trainer, DAGNN_Trainer
 from .gsr import GSR
 from .nodeformer import NodeFormer
+from .han import HAN
 
 __all__ = [
     'BaseModel',
@@ -40,5 +41,6 @@ __all__ = [
     'GPRGNN_Trainer',
     'DAGNN_Trainer',
     'GSR',
-    'NodeFormer'
+    'NodeFormer',
+    'HAN',
 ]
