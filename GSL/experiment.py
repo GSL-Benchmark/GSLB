@@ -106,7 +106,7 @@ class Experiment(object):
             seed_everything(i)
 
             # Initialize the GSL model
-            if self.model_name in ['SLAPS', 'CoGSL', 'HGSL', 'GTN', 'LDS']:
+            if self.model_name in ['SLAPS', 'CoGSL', 'HGSL', 'GTN']:
                 model = self.model_dict[self.model_name](num_feat, num_class, self.eval_metric,
                                                          self.config_path, self.dataset_name, self.device, self.data) # TODO modify the config according to the search space
             else:

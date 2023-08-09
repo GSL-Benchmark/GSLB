@@ -42,27 +42,9 @@ class LDS(BaseModel):
     """
     def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, data):
         super(LDS, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
-        self.data = data
-        data.val_mask, outer_opt_mask = split_mask(data.val_mask, ratio=0.5, shuffle=True, device=device)
 
         # inner_trainer里自己有一个gcn
         # outer_trainer里自己有一个graph_generator
-
-        graph_convolutional_network = GCN(num_features, self.config.hidden_size, num_classes, 2, self.config.dropout, dropout_adj=0.0, sparse=False)
-        self.inner_trainer = InnerProblemTrainer(model=graph_convolutional_network,
-                                                 data=self.data,
-                                                 lr=self.config.gcn_optimizer_learning_rate,
-                                                 weight_decay=self.config.gcn_weight_decay)
-
-
-        graph_model_factory = GraphGenerativeModelFactory(data=self.data)
-        graph_generator_model = graph_model_factory.create(self.config.graph_model).to(device)
-        graph_generator_opt = graph_model_factory.optimizer(graph_generator_model)
-        self.outer_trainer = OuterProblemTrainer(optimizer=graph_generator_opt,
-                                                                 data=data,
-                                                                 opt_mask=outer_opt_mask,
-                                                                 model=graph_generator_model,
-                                                                 )
         
         self.logger = setup_basic_logger()
         
@@ -97,7 +79,34 @@ class LDS(BaseModel):
         # self.config = self.config
     
 
-    def fit(self, dataset=None):
+    def fit(self, dataset=None, split_num=0):
+        adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
+        if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
+            train_mask = dataset.train_masks[split_num % 10]
+            val_mask = dataset.val_masks[split_num % 10]
+            test_mask = dataset.test_masks[split_num % 10]
+        else:
+            train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
+
+        dataset.train_mask, dataset.val_mask, dataset.test_mask = train_mask, val_mask, test_mask
+
+        dataset.val_mask, outer_opt_mask = split_mask(val_mask, ratio=0.5, shuffle=True, device=self.device)
+        graph_convolutional_network = GCN(self.num_feat, self.config.hidden_size, self.num_class, 2, self.config.dropout, dropout_adj=0.0, sparse=False)
+        self.inner_trainer = InnerProblemTrainer(model=graph_convolutional_network,
+                                                 data=dataset,
+                                                 lr=self.config.gcn_optimizer_learning_rate,
+                                                 weight_decay=self.config.gcn_weight_decay)
+
+
+        graph_model_factory = GraphGenerativeModelFactory(data=dataset)
+        graph_generator_model = graph_model_factory.create(self.config.graph_model).to(self.device)
+        graph_generator_opt = graph_model_factory.optimizer(graph_generator_model)
+        self.outer_trainer = OuterProblemTrainer(optimizer=graph_generator_opt,
+                                                                 data=dataset,
+                                                                 opt_mask=outer_opt_mask,
+                                                                 model=graph_generator_model,
+                                                                 )
+
         patience = self.config.patience
         outer_loop_max_epochs = self.config.outer_loop_max_epochs
         inner_loop_max_epochs = self.config.inner_loop_max_epochs
@@ -107,7 +116,7 @@ class LDS(BaseModel):
         outer_early_stopper = EarlyStopping(patience=patience,
                                             max_epochs=outer_loop_max_epochs)
         current_step = 0
-        outter_step = 0
+        outer_step = 0
         while not outer_early_stopper.abort:  # Depends on empirical mean validation loss
             inner_early_stopper = EarlyStopping(patience=patience, max_epochs=inner_loop_max_epochs)
 
@@ -142,7 +151,7 @@ class LDS(BaseModel):
                 empirical_mean_loss(self.inner_trainer.model,
                                     graph_model=self.outer_trainer.model,
                                     n_samples=self.config.n_samples_empirical_mean,
-                                    data=self.data, # TODO: data/dataset??? which one
+                                    data=dataset, # TODO: data/dataset??? which one
                                     model_parameters=gcn_model_params)
             
             self.logger.info(f"Empirical Validation Set Results: loss={empirical_val_results.loss}, "
@@ -150,7 +159,7 @@ class LDS(BaseModel):
             outer_early_stopper.update(empirical_val_results.loss,
                                        model_params=[deepcopy(gcn_model_params),
                                                      self.outer_trainer.model.state_dict()])
-            outter_step += 1
+            outer_step += 1
         
         self.logger.info(f"Ended training after {outer_step} steps...")
         self.gcn_params, self.graph_state_dict = outer_early_stopper.model_params
@@ -187,7 +196,7 @@ class LDS(BaseModel):
             f"Outer optimizer learning rate: {self.outer_trainer.get_learning_rates()}")
 
     
-    def evaluate(self):
+    def evaluate(self, dataset):
         assert self.gcn_params is not None and \
                self.graph_state_dict is not None, "Models need to be trained before evaluation."
         model_params, graph_model_state_dict = self.gcn_params, self.graph_state_dict
@@ -197,7 +206,7 @@ class LDS(BaseModel):
             empirical_mean_loss(self.inner_trainer.model,
                                 graph_model=self.outer_trainer.model,
                                 n_samples=self.config.n_samples_empirical_mean,
-                                data=self.data,
+                                data=dataset,
                                 model_parameters=model_params)
         return {
             "loss.val.final": empirical_val_results.loss,
@@ -205,8 +214,6 @@ class LDS(BaseModel):
             "loss.test.final": empirical_test_results.loss,
             "acc.test.final": empirical_test_results.acc,
         }
-
-
 
 
 class InnerProblemTrainer:
