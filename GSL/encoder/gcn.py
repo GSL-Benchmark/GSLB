@@ -9,6 +9,8 @@ from dgl.nn.pytorch.conv import GraphConv
 from torch.nn import Linear, ReLU, Sequential
 from torch.nn.parameter import Parameter
 from torch.nn.init import xavier_uniform_
+
+from GSL.utils import lds_normalize_adjacency_matrix
 from .metamodule import MetaModule, MetaLinear, get_subdict
 
 
@@ -307,7 +309,7 @@ class MetaDenseGCN(MetaModule):
         self.layer_out = MetaDenseGraphConvolution(hidden_features, out_features)
 
         self.dropout = dropout
-        # self.normalize_adj = normalize_adj
+        self.normalize_adj = normalize_adj
 
     def reset_weights(self):
         self.layer_in.reset_weights()
@@ -315,8 +317,8 @@ class MetaDenseGCN(MetaModule):
 
     def forward_to_last_layer(self, node_features, dense_adj, params=None):
         # from IPython import embed; embed(header='in forward_to_last_layer')
-        # if self.normalize_adj:
-        #     dense_adj = normalize_adjacency_matrix(dense_adj)
+        if self.normalize_adj:
+            dense_adj = lds_normalize_adjacency_matrix(dense_adj)
 
         embeddings = F.dropout(node_features, self.dropout, training=self.training)
         embeddings = F.relu(self.layer_in(embeddings, dense_adj, params=get_subdict(params, 'layer_in')))
