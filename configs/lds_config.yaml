@@ -1,0 +1,30 @@
+Default:
+  dataset: cora
+  seed: 0
+  patience: 20
+  outer_loop_max_epochs: 400
+  inner_loop_max_epochs: 400
+  hyper_gradient_interval: 5
+  hidden_size: 16
+  dropout: 0.5
+  gcn_optimizer_learning_rate: 0.01
+  gcn_weight_decay: 0.0005
+  graph_model: "lds"
+  smoothness_factor: 0.0
+  disconnection_factor: 0.0
+  sparsity_factor: 0.0
+  n_samples_empirical_mean: 16
+
+
+cora:
+  dataset: cora
+  sparse: True
+  dropout: 0.5
+  compl_param: "150"
+  normalize: True
+  reduce: knn
+  lr: 0.005
+  weight_decay: 0.005
+  lr_graph: 0.001
+  weight_decay_graph: 0.
+  num_epochs: 300

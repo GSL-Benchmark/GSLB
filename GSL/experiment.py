@@ -41,10 +41,10 @@ class Experiment(object):
         self.model_name = model_name
         self.dataset_name = dataset.lower()
         self.model_dict = {
-            'GCN': GCN_Trainer, 'MLP': MLP_Trainer, 'GRCN': GRCN, 'ProGNN': ProGNN, 'IDGL': IDGL, 'GEN': GEN, 'CoGSL': CoGSL, 
-            'SLAPS': SLAPS, 'SUBLIME': SUBLIME, 'STABLE': STABLE, 'GTN': GTN, 'HGSL': HGSL, 
-            'HGPSL': HGPSL, 'VIBGSL': VIBGSL, 'HESGSL': HESGSL, 'GSR': GSR, 'HAN': HAN,
-            # 'nodeformer': NodeFormer,
+            'GCN': GCN_Trainer, 'MLP': MLP_Trainer, 'GPRGNN': GPRGNN_Trainer, 'DAGNN': DAGNN_Trainer, 'GRCN': GRCN, 'ProGNN': ProGNN, 'IDGL': IDGL,
+            'SLAPS': SLAPS, 'SUBLIME': SUBLIME, 'STABLE': STABLE, 'GTN': GTN, 'HGSL': HGSL, 'CoGSL': CoGSL, 'GEN': GEN,
+            'HGPSL': HGPSL, 'VIBGSL': VIBGSL, 'HESGSL': HESGSL, 'GSR': GSR, 'NodeFormer': NodeFormer, 'HAN': HAN,
+            # 'LDS': LDS
         }
 
         # Load graph datasets
@@ -71,7 +71,7 @@ class Experiment(object):
 
             # Randomly add edges
             if add_rate > 0:
-                adj = random_add_edge(adj, drop_rate)
+                adj = random_add_edge(adj, add_rate)
 
             # Use knn graph instead of the original structure
             if use_knn:

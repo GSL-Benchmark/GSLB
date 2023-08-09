@@ -1,0 +1,16 @@
+Default:
+  epochs: 1000
+  lr: 0.01
+  weight_decay: 0.005
+  hidden: 64
+  dropout: 0.5
+  K: 10
+
+cora:
+  dropout: 0.8
+
+citeseer:
+  weight_decay: 0.02
+
+pubmed:
+  dropout: 0.8

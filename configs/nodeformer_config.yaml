@@ -1,0 +1,165 @@
+Default:
+  seed: 9
+  num_layers: 2
+  num_heads: 4
+  kernel_transformation: softmax
+  nb_random_features: 30
+  rb_trans: sigmoid
+  use_residual: True
+  use_gumbel: True
+  use_bn: True
+  use_jk: False
+  use_edge_loss: True
+  use_act: False
+  tau: 0.25
+
+cora:
+  sparse: False
+  hidden_dim: 32
+  dropout: 0.0
+  epochs: 500
+  lr: 0.01
+  weight_decay: 5.0e-4
+  eval_step: 1
+  lamda: 1.0
+  rb_order: 3
+  nb_gumbel_sample: 10
+
+citeseer:
+  sparse: False
+  hidden_dim: 32
+  dropout: 0.5
+  epochs: 500
+  lr: 0.01
+  weight_decay: 5.0e-3
+  eval_step: 1
+  lamda: 1.0
+  rb_order: 3
+  tau: 0.25
+  nb_gumbel_sample: 10
+
+pubmed:
+  sparse: False
+  hidden_dim: 32
+  dropout: 0.3
+  epochs: 1000
+  lr: 0.001
+  weight_decay: 5.0e-4
+  eval_step: 1
+  lamda: 1.0
+  rb_order: 2
+  tau: 0.25
+  nb_gumbel_sample: 10
+
+amazon-computers:
+  sparse: False
+  hidden_dim: 64
+  dropout: 0.2
+  epochs: 5000
+  lr: 0.0005
+  weight_decay: 5.0e-4
+  eval_step: 10
+  lamda: 0.5
+  rb_order: 0
+  tau: 0.25
+  nb_gumbel_sample: 10
+  nb_random_features: 30
+  use_jk: True
+  use_act: False
+
+amazon-photo:
+  sparse: False
+  hidden_dim: 64
+  dropout: 0.2
+  epochs: 500
+  lr: 0.003
+  weight_decay: 0.0005
+  eval_step: 1
+  lamda: 0.5
+  rb_order: 1
+  tau: 0.25
+  nb_gumbel_sample: 10
+
+cornell:
+  sparse: False
+  hidden_dim: 128
+  dropout: 0.5
+  epochs: 100
+  lr: 0.01
+  weight_decay: 5.0e-4
+  eval_step: 1
+  lamda: 0.01
+  rb_order: 1
+  nb_gumbel_sample: 10
+
+texas:
+  sparse: False
+  hidden_dim: 128
+  dropout: 0.5
+  epochs: 50
+  lr: 0.01
+  weight_decay: 5.0e-4
+  eval_step: 1
+  lamda: 1
+  rb_order: 1
+  nb_gumbel_sample: 10
+
+wisconsin:
+  sparse: False
+  hidden_dim: 128
+  dropout: 0.5
+  epochs: 500
+  lr: 0.01
+  weight_decay: 5.0e-4
+  eval_step: 1
+  lamda: 1
+  rb_order: 1
+  nb_gumbel_sample: 10
+
+actor:
+  sparse: False
+  hidden_dim: 128
+  dropout: 0.5
+  epochs: 500
+  lr: 0.01
+  weight_decay: 5.0e-4
+  eval_step: 1
+  lamda: 1
+  rb_order: 1
+  nb_gumbel_sample: 10
+
+chameleon:
+  sparse: False
+  hidden_dim: 128
+  dropout: 0.5
+  epochs: 150
+  lr: 0.005
+  weight_decay: 5.0e-4
+  eval_step: 1
+  lamda: 1
+  rb_order: 1
+  nb_gumbel_sample: 10
+
+squirrel:
+  sparse: False
+  hidden_dim: 128
+  dropout: 0.5
+  epochs: 100
+  lr: 0.005
+  weight_decay: 5.0e-4
+  eval_step: 1
+  lamda: 1
+  rb_order: 1
+  nb_gumbel_sample: 10
+
+acm:
+  sparse: False
+  hidden_dim: 32
+  dropout: 0.0
+  epochs: 500
+  lr: 0.01
+  weight_decay: 5.0e-4
+  eval_step: 1
+  lamda: 1.0
+  rb_order: 2
+  nb_gumbel_sample: 10

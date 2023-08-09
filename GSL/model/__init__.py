@@ -14,8 +14,9 @@ from .hgpsl import HGPSL
 from .gtn import GTN
 from .hgsl import HGSL
 from .hesgsl import HESGSL
-from .baselines import GCN_Trainer, MLP_Trainer
+from .baselines import GCN_Trainer, MLP_Trainer, GPRGNN_Trainer, DAGNN_Trainer
 from .gsr import GSR
+from .nodeformer import NodeFormer
 from .han import HAN
 
 __all__ = [
@@ -37,6 +38,9 @@ __all__ = [
     'HESGSL',
     'GCN_Trainer',
     'MLP_Trainer',
+    'GPRGNN_Trainer',
+    'DAGNN_Trainer',
     'GSR',
-    'HAN'
+    'NodeFormer',
+    'HAN',
 ]
