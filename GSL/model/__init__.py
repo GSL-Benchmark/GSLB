@@ -19,6 +19,7 @@ from .gsr import GSR
 from .nodeformer import NodeFormer
 from .han import HAN
 from .lds import LDS
+from .lds import LDS
 
 __all__ = [
     'BaseModel',
