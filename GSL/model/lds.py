@@ -1,6 +1,8 @@
 from GSL.model import BaseModel
-from GSL.encoder import GCN_dgl, GCN
-from GSL.utils import empirical_mean_loss, Metrics, accuracy, get_triu_values, graph_regularization, get_lr, is_square_matrix, split_mask, straight_through_estimator, to_undirected, triu_values_to_symmetric_matrix
+from GSL.encoder import GCN_dgl, GCN, MetaDenseGCN
+from GSL.utils import empirical_mean_loss, Metrics, accuracy, get_triu_values, graph_regularization, \
+                        get_lr, is_square_matrix, lds_normalize_adjacency_matrix, shuffle_splits_, split_mask, straight_through_estimator, lds_to_undirected, \
+                        triu_values_to_symmetric_matrix, row_normalize_features, normalize, dense_adj_to_edge_index, to_undirected
 
 
 from abc import ABC, abstractmethod
@@ -16,6 +18,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import numpy as np
 import logging
+import copy
 
 
 from torch import Tensor
@@ -34,6 +37,27 @@ def setup_basic_logger():
     logger.addHandler(ch)
     logger.setLevel(logging.INFO)
     return logger
+
+
+class Transform(ABC):
+    def __init__(self):
+        pass
+
+    @abstractmethod
+    def __call__(self, data):
+        pass
+
+
+class ShuffleSplits(Transform):
+    def __init__(self, seed: Optional[int] = None):
+        super().__init__()
+        self.seed = seed
+
+    def __call__(self, data):
+        assert hasattr(data, "train_mask") and hasattr(data, "val_mask") and hasattr(data, "test_mask")
+        copy_data = copy.deepcopy(data)
+        shuffle_splits_(copy_data, seed=self.seed)
+        return copy_data
 
 
 class LDS(BaseModel):
@@ -81,6 +105,8 @@ class LDS(BaseModel):
 
     def fit(self, dataset=None, split_num=0):
         adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
+        features = row_normalize_features(features)
+
         if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
             train_mask = dataset.train_masks[split_num % 10]
             val_mask = dataset.val_masks[split_num % 10]
@@ -89,9 +115,19 @@ class LDS(BaseModel):
             train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
 
         dataset.train_mask, dataset.val_mask, dataset.test_mask = train_mask, val_mask, test_mask
+        dataset.features = features
+        dataset.adj = adj
+        shuffler = ShuffleSplits(self.config.seed)
+        dataset = shuffler(dataset)
 
-        dataset.val_mask, outer_opt_mask = split_mask(val_mask, ratio=0.5, shuffle=True, device=self.device)
-        graph_convolutional_network = GCN(self.num_feat, self.config.hidden_size, self.num_class, 2, self.config.dropout, dropout_adj=0.0, sparse=False)
+        dataset.val_mask, outer_opt_mask = split_mask(dataset.val_mask, ratio=0.5, shuffle=True, device=self.device)
+        # from IPython import embed; embed(header='in scripts bilevel')
+        # Normal GCN
+        # graph_convolutional_network = GCN(self.num_feat, self.config.hidden_size, self.num_class, num_layers=2, 
+        #                                   dropout=self.config.dropout, dropout_adj=0.0, sparse=False, 
+        #                                   conv_bias=False, activation_last=self.config.activation_last)
+        # TorchMeta GCN
+        graph_convolutional_network = MetaDenseGCN(self.num_feat, self.config.hidden_size, self.num_class, self.config.dropout, normalize_adj=self.config.normalize_adj)
         self.inner_trainer = InnerProblemTrainer(model=graph_convolutional_network,
                                                  data=dataset,
                                                  lr=self.config.gcn_optimizer_learning_rate,
@@ -156,6 +192,10 @@ class LDS(BaseModel):
             
             self.logger.info(f"Empirical Validation Set Results: loss={empirical_val_results.loss}, "
                              f"accuracy={empirical_val_results.acc}")
+            self.logger.info(f"Empirical Test Set Results: loss={empirical_test_results.loss}, "
+                             f"accuracy={empirical_test_results.acc}")
+            
+            # from IPython import embed; embed(header="in bilevel_trainer after test")
             outer_early_stopper.update(empirical_val_results.loss,
                                        model_params=[deepcopy(gcn_model_params),
                                                      self.outer_trainer.model.state_dict()])
@@ -164,10 +204,13 @@ class LDS(BaseModel):
         self.logger.info(f"Ended training after {outer_step} steps...")
         self.gcn_params, self.graph_state_dict = outer_early_stopper.model_params
 
+        return self.evaluate(dataset)
+
 
     def inner_opt_step(self):
         self.outer_trainer.train()
         graph = self.outer_trainer.sample()
+        # from IPython import embed; embed(header="inner_opt_step")
         train_set_metrics = self.inner_trainer.train_step(graph)
         return train_set_metrics
 
@@ -187,10 +230,9 @@ class LDS(BaseModel):
         #     sacred_runner.log_scalar("acc.outer", metrics.acc, step=current_step)
         #     for i, lr in enumerate(self.outer_trainer.get_learning_rates()):
         #         sacred_runner.log_scalar(f"Outer Learning Rate {i}", lr, step=current_step)
-        #     self.logger.info(f"Graph Model Statistics:")
-        #     for name, value in self.outer_trainer.model.statistics().items():
-        #         sacred_runner.log_scalar(name, value, step=current_step)
-        #         self.logger.info(f"{name}: {value}")
+        self.logger.info(f"Graph Model Statistics:")
+        for name, value in self.outer_trainer.model.statistics().items():
+            self.logger.info(f"{name}: {value}")
         self.logger.info(
             f"Performance on held-out sample for graph optimization: loss={metrics.loss}, accuracy={metrics.acc}"
             f"Outer optimizer learning rate: {self.outer_trainer.get_learning_rates()}")
@@ -234,15 +276,22 @@ class InnerProblemTrainer:
     
 
     def reset_weights(self):
-        self.model.reset_parameters()
+        # MetaTorchGCN
+        # self.model.reset_parameters()
+        self.model.reset_weights()
         self.model_params = OrderedDict(self.model.named_parameters())
 
     
     def reset_optimizer(self) -> None:
         optimizer = Adam(
+            # MetaTorchGCN
+            # [
+            #     {"params": self.model.layers[0].parameters(), "weight_decay": self.weight_decay},
+            #     {"params": self.model.layers[1].parameters()}
+            # ], lr=self.lr)
             [
-                {"params": self.model.layers[0].parameters(), "weight_decay": self.weight_decay},
-                {"params": self.model.layers[1].parameters()}
+                {"params": self.model.layer_in.parameters(), "weight_decay": self.weight_decay},
+                {"params": self.model.layer_out.parameters()}
             ], lr=self.lr)
         self.optimizer = DifferentiableAdam(optimizer,
                                             self.model.parameters()
@@ -276,6 +325,7 @@ class InnerProblemTrainer:
         loss = F.nll_loss(predictions[mask], self.data.labels[mask])
         acc = accuracy(predictions[mask], self.data.labels[mask])
 
+        # from IPython import embed; embed(header="in inner train_step")
         new_model_params = self.optimizer.step(loss, params=self.model_params.values())
         self._update_model_params(list(new_model_params))
 
@@ -286,7 +336,11 @@ class InnerProblemTrainer:
         self.model.train(mode=is_train)
         # return self.model(self.data.features, graph, params=self.model_params) # TODO: figure out the torchmeta's influence
         # it seems to be adding bias?
-        return self.model(self.data.features, graph)
+        # graph = lds_normalize_adjacency_matrix(graph)
+        # MetaTorchGCN
+        return self.model(self.data.features, graph, params=self.model_params)
+        # from IPython import embed; embed()
+        # return self.model(self.data.features, graph)
 
     def evaluate(self,
                  graph: torch.Tensor,
@@ -349,8 +403,8 @@ class OuterProblemTrainer:
                  smoothness_factor: float = 0.0,
                  disconnection_factor: float = 0.0,
                  sparsity_factor: float = 0.0,
-                 regularize: float = True,
-                 lr_decay: float = None,
+                 regularize: float = False,
+                 lr_decay: float = 1.0,
                  lr_decay_step_size: int = 1,
                  refine_embeddings: bool = False,
                  pretrain: bool = False,
@@ -397,6 +451,8 @@ class OuterProblemTrainer:
                                          disconnection_factor=self.disconnection_factor,
                                          sparsity_factor=self.sparsity_factor,
                                          )
+
+        # from IPython import embed; embed(header="in outer train_step")
 
         loss.backward(retain_graph=retain_graph)
         self.optimizer.step()
@@ -524,10 +580,10 @@ def sample_graph(edge_probs: Tensor,
                 undirected: bool,
                 embeddings: Optional[Tensor] = None,
                 dense: bool = False,
-                k: Optional[int] = None,
+                k: Optional[int] = 20,
                 sparsification: SPARSIFICATION = SPARSIFICATION.NONE,
                 force_straight_through_estimator: bool = False,
-                eps: Optional[float] = None,
+                eps: Optional[float] = 0.9,
                 knn_metric: str = "cosine"
                 ) -> Tensor:
     assert is_square_matrix(edge_probs)
@@ -549,7 +605,7 @@ def sample_graph(edge_probs: Tensor,
                         eps=eps,
                         knn_metric=knn_metric)
 
-    sample = to_undirected(sample, from_triu_only=True) if undirected else sample
+    sample = lds_to_undirected(sample, from_triu_only=True) if undirected else sample
     if force_straight_through_estimator or not dense:
         sample = straight_through_estimator(sample, edge_probs)
     return sample
@@ -608,6 +664,7 @@ class GraphGenerativeModel(nn.Module, ABC):
 
     def sample(self, *args, **kwargs) -> Tensor:
         probs = self.forward()
+        # from IPython import embed; embed(header='GraphGenerativeModel.sample')
         edges = Sampler.sample(probs)
         return edges
 
@@ -700,6 +757,7 @@ class BernoulliGraphModel(GraphGenerativeModel):
         self.apply(ParameterClamper())
 
     def forward(self, *args, **kwargs) -> torch.Tensor:
+        # from IPython import embed; embed(header='BernoulliGraphModel.forward')
         return self.probs if self.directed else triu_values_to_symmetric_matrix(self.probs)  # type: ignore
 
     def statistics(self) -> Dict[str, float]:

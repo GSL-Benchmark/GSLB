@@ -8,6 +8,10 @@ import torch.nn.functional as F
 from dgl.nn.pytorch.conv import GraphConv
 from torch.nn import Linear, ReLU, Sequential
 from torch.nn.parameter import Parameter
+from torch.nn.init import xavier_uniform_
+
+from GSL.utils import lds_normalize_adjacency_matrix
+from .metamodule import MetaModule, MetaLinear, get_subdict
 
 
 class GCNConv(nn.Module):
@@ -128,6 +132,7 @@ class GCN(nn.Module):
         self.activation_last = activation_last
 
     def forward(self, x, adj_t, return_hidden=False):
+        # from IPython import embed; embed(header='gcn.py, line 131')
         Adj = self.dropout_adj(adj_t)
         is_torch_sparse_tensor = Adj.is_sparse
         outputs = []
@@ -277,3 +282,50 @@ class GraphEncoder(nn.Module):
         x = self.gnn_encoder_layers[-1](x, Adj)
         z = self.proj_head(x)
         return z, x
+    
+
+class MetaDenseGraphConvolution(MetaModule):
+    def __init__(self, in_features, out_features, use_bias=True):
+        super(MetaDenseGraphConvolution, self).__init__()
+        self.fc = MetaLinear(in_features, out_features, bias=use_bias)
+        self.reset_weights()
+
+    def reset_weights(self):
+        self.fc.weight = Parameter(xavier_uniform_(self.fc.weight.clone()))
+        self.fc.bias = Parameter(self.fc.bias.clone().zero_())
+
+    def forward(self, node_features, dense_adj, params=None):
+        embeddings = self.fc.forward(node_features, params=get_subdict(params, "fc"))
+        return torch.mm(dense_adj, embeddings)
+    
+
+class MetaDenseGCN(MetaModule):
+    """
+    Only for LDS-GNN.
+    """
+    def __init__(self, in_features, hidden_features, out_features, dropout, normalize_adj: bool = True):
+        super(MetaDenseGCN, self).__init__()
+        self.layer_in = MetaDenseGraphConvolution(in_features, hidden_features)
+        self.layer_out = MetaDenseGraphConvolution(hidden_features, out_features)
+
+        self.dropout = dropout
+        self.normalize_adj = normalize_adj
+
+    def reset_weights(self):
+        self.layer_in.reset_weights()
+        self.layer_out.reset_weights()
+
+    def forward_to_last_layer(self, node_features, dense_adj, params=None):
+        # from IPython import embed; embed(header='in forward_to_last_layer')
+        if self.normalize_adj:
+            dense_adj = lds_normalize_adjacency_matrix(dense_adj)
+
+        embeddings = F.dropout(node_features, self.dropout, training=self.training)
+        embeddings = F.relu(self.layer_in(embeddings, dense_adj, params=get_subdict(params, 'layer_in')))
+        embeddings = F.dropout(embeddings, self.dropout, training=self.training)
+        return self.layer_out(embeddings, dense_adj, params=get_subdict(params, 'layer_out'))
+
+    def forward(self, node_features, dense_adj, params=None):
+        embeddings = self.forward_to_last_layer(node_features, dense_adj, params=params)
+        # from IPython import embed; embed(header='in forward')
+        return F.log_softmax(embeddings, dim=1)

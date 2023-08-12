@@ -19,6 +19,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import yaml
+from sklearn.model_selection import StratifiedShuffleSplit
 from dgl.data import DGLDataset
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import StratifiedKFold, train_test_split
@@ -622,6 +623,38 @@ def sample_mask(idx, l):
     return np.array(mask, dtype=bool)
 
 
+def lds_add_self_loops(adj: torch.Tensor):
+    """
+    Adds self loop to graph by setting diagonal of adjacency matrix to 1.
+    Preserves gradient flow
+    :param adj: Square matrix
+    :return: Cloned tensor with diagonals set to 1
+    """
+    assert is_square_matrix(adj)
+    adj_clone = adj.clone()
+    adj_clone.fill_diagonal_(1.0)
+    return adj_clone
+
+
+def lds_normalize_adjacency_matrix(dense_adj: torch.Tensor) -> torch.Tensor:
+    """
+    Normalizes adjacency matrix as proposed in original GCN paper.
+    :param dense_adj: Dense adjacency matrix
+    :return:
+    """
+    assert is_square_matrix(dense_adj)
+
+    dense_adj_with_self_loops = lds_add_self_loops(dense_adj)
+
+    # Normalization
+    degree_matrix = dense_adj_with_self_loops.sum(dim=1)
+    inv_sqrt_degree_matrix = 1.0 / degree_matrix.sqrt()
+    inv_sqrt_degree_matrix = torch.diag(inv_sqrt_degree_matrix).to(dense_adj.device)
+
+    normalized_dense_adj = inv_sqrt_degree_matrix @ dense_adj_with_self_loops @ inv_sqrt_degree_matrix
+    return normalized_dense_adj
+
+
 def row_normalize_features(features):
     """Row-normalize feature matrix and convert to tuple representation"""
     if isinstance(features, torch.Tensor):
@@ -1086,13 +1119,14 @@ def empirical_mean_loss(gcn,
         test_accuracies = []
         for _ in range(n_samples):
             graph = graph_model.sample()
-            predictions = gcn(data.features, graph)
+            predictions = gcn(data.features, graph, params=model_parameters)
 
             val_losses.append(F.nll_loss(predictions[data.val_mask], data.labels[data.val_mask]).item())
             val_accuracies.append(accuracy(predictions[data.val_mask], data.labels[data.val_mask]))
 
             test_losses.append(F.nll_loss(predictions[data.test_mask], data.labels[data.test_mask]).item())
             test_accuracies.append(accuracy(predictions[data.test_mask], data.labels[data.test_mask]))
+        # from IPython import embed; embed(header='empirical_mean_loss')
 
     val_metrics = Metrics(loss=np.mean(val_losses).item(), acc=np.mean(val_accuracies).item())
     test_metrics = Metrics(loss=np.mean(test_losses).item(), acc=np.mean(test_accuracies).item())
@@ -1142,7 +1176,7 @@ def is_square_matrix(tensor: torch.Tensor) -> bool:
     return len(tensor.size()) == 2 and tensor.size(0) == tensor.size(1)
 
 
-def to_undirected(adj: torch.Tensor,
+def lds_to_undirected(adj: torch.Tensor,
                 from_triu_only: bool = False) -> torch.Tensor:
     assert is_square_matrix(adj)
 
@@ -1223,7 +1257,41 @@ def triu_values_to_symmetric_matrix(triu_values):
     adj = torch.zeros((n_nodes, n_nodes), device=triu_values.device)
     adj[indices[0], indices[1]] = triu_values
 
-    adj = to_undirected(adj, from_triu_only=True)
+    adj = lds_to_undirected(adj, from_triu_only=True)
 
     adj = adj.clamp(0.0, 1.0)
     return adj
+
+
+def indices_to_mask(indices: torch.LongTensor, size: int):
+    mask = torch.zeros(size, dtype=torch.bool, device=indices.device)
+    mask[indices] = 1
+    return mask
+
+
+def shuffle_splits_(data, seed=None) -> None:
+    train_mask, val_mask, test_mask = data.train_mask, data.val_mask, data.test_mask
+    train_size, val_size, test_size = train_mask.sum(), val_mask.sum(), test_mask.sum()
+
+    splitter = StratifiedShuffleSplit(n_splits=1,
+                                      test_size=test_size,
+                                      train_size=val_size + train_size,
+                                      random_state=seed)
+    train_val_indices, test_indices = next(splitter.split(data.features, data.labels))
+
+    train_val_splitter = StratifiedShuffleSplit(n_splits=1,
+                                                test_size=val_size,
+                                                train_size=train_size,
+                                                random_state=seed)
+    train_indices, val_indices = next(train_val_splitter.split(data.features[train_val_indices], data.labels[train_val_indices]))
+    train_indices, val_indices = train_val_indices[train_indices], train_val_indices[val_indices]
+
+    train_indices = torch.as_tensor(train_indices, device=data.features.device)
+    val_indices = torch.as_tensor(val_indices, device=data.features.device)
+    test_indices = torch.as_tensor(test_indices, device=data.features.device)
+
+    train_mask = indices_to_mask(train_indices, train_mask.size(0))
+    val_mask = indices_to_mask(val_indices, val_mask.size(0))
+    test_mask = indices_to_mask(test_indices, test_mask.size(0))
+
+    data.train_mask, data.val_mask, data.test_mask = train_mask, val_mask, test_mask
