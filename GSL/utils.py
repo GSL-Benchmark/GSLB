@@ -114,26 +114,6 @@ def accuracy(output, labels):
     return correct / len(labels)
 
 
-def auc_f1_mima(logits, label):
-    preds = torch.argmax(logits, dim=1)
-    test_f1_macro = f1_score(label.cpu(), preds.cpu(), average="macro")
-    test_f1_micro = f1_score(label.cpu(), preds.cpu(), average="micro")
-
-    best_proba = F.softmax(logits, dim=1)
-    if logits.shape[1] != 2:
-        auc = roc_auc_score(
-            y_true=label.detach().cpu().numpy(),
-            y_score=best_proba.detach().cpu().numpy(),
-            multi_class="ovr",
-        )
-    else:
-        auc = roc_auc_score(
-            y_true=label.detach().cpu().numpy(),
-            y_score=best_proba[:, 1].detach().cpu().numpy(),
-        )
-    return test_f1_macro, test_f1_micro, auc
-
-
 def split_batch(init_list, batch_size):
     groups = zip(*(iter(init_list),) * batch_size)
     end_list = [list(i) for i in groups]
@@ -550,7 +530,9 @@ def cal_mif1(tp, fp, fn):
     return mi_f1.cpu().numpy()
 
 
-def macro_f1(pred, target, n_class):
+def macro_f1(pred, target):
+    n_class = pred.size(1)
+    pred = torch.argmax(pred, dim=1)
     tp = true_positive(pred, target, n_class).to(torch.float)
     fn = false_negative(pred, target, n_class).to(torch.float)
     fp = false_positive(pred, target, n_class).to(torch.float)
@@ -559,13 +541,16 @@ def macro_f1(pred, target, n_class):
     return ma_f1
 
 
-def micro_f1(pred, target, n_class):
+def micro_f1(pred, target):
+    n_class = pred.size(1)
+    pred = torch.argmax(pred, dim=1)
     tp = true_positive(pred, target, n_class).to(torch.float)
     fn = false_negative(pred, target, n_class).to(torch.float)
     fp = false_positive(pred, target, n_class).to(torch.float)
 
     mi_f1 = cal_mif1(tp, fp, fn)
     return mi_f1
+
 
 
 def sparse_dense_mul(s, d):
