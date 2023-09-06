@@ -116,7 +116,7 @@ class Experiment(object):
 
 
             # Structure Learning
-            self.model.fit(self.data)
+            self.model.fit(self.data, split_num=i)
 
             result = self.model.best_result
             test_results.append(result)
