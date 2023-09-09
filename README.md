@@ -33,6 +33,7 @@ GSLB needs the following requirements to be satisfied beforehand:
 * tqdm
 * easydict
 * PyYAML
+* DeepRobust
 
 ### Installation via PyPI
 
@@ -84,7 +85,11 @@ Optional arguments:
 python main.py --dataset cora --model GRCN --metric acc
 ```
 
+*If you want to quickly generate a perturbed graph by Mettack:*
 
+```
+python generate_attack.py --dataset cora --ptb_rate 0.05
+```
 
 Step 1: Load datasets
 
