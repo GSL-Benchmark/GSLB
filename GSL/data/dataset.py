@@ -31,58 +31,6 @@ def get_y(idx, labels):
     return mx
 
 
-def get_train_val_test(nnodes, val_size=0.1, test_size=0.8, stratify=None, seed=None):
-    """This setting follows nettack/mettack, where we split the nodes
-    into 10% training, 10% validation and 80% testing data
-
-    Parameters
-    ----------
-    nnodes : int
-        number of nodes in total
-    val_size : float
-        size of validation set
-    test_size : float
-        size of test set
-    stratify :
-        data is expected to split in a stratified fashion. So stratify should be labels.
-    seed : int or None
-        random seed
-
-    Returns
-    -------
-    idx_train :
-        node training indices
-    idx_val :
-        node validation indices
-    idx_test :
-        node test indices
-    """
-
-    assert stratify is not None, 'stratify cannot be None!'
-
-    if seed is not None:
-        np.random.seed(seed)
-
-    idx = np.arange(nnodes)
-    train_size = 1 - val_size - test_size
-    idx_train_and_val, idx_test = train_test_split(idx,
-                                                   random_state=None,
-                                                   train_size=train_size + val_size,
-                                                   test_size=test_size,
-                                                   stratify=stratify)
-
-    if stratify is not None:
-        stratify = stratify[idx_train_and_val]
-
-    idx_train, idx_val = train_test_split(idx_train_and_val,
-                                          random_state=None,
-                                          train_size=(train_size / (train_size + val_size)),
-                                          test_size=(val_size / (train_size + val_size)),
-                                          stratify=stratify)
-
-    return idx_train, idx_val, idx_test
-
-
 def normalize_adj(mx):
     """Normalize sparse adjacency matrix"""
     if type(mx) is not sp.lil.lil_matrix:
