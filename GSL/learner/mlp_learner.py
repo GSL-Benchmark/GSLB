@@ -45,7 +45,7 @@ class MLPLearner(BaseLearner):
             cols_ = torch.cat((cols, rows))
             values_ = torch.cat((values, values))
             values_ = self.activation(values_)
-            adj = dgl.graph((rows_, cols_), num_nodes=features.shape[0], device='cuda')
+            adj = dgl.graph((rows_, cols_), num_nodes=features.shape[0], device=features.device)
             adj.edata['w'] = values_
             return adj
         else:

@@ -129,11 +129,11 @@ def symmetrize(adj):  # only for non-sparse
 def knn_fast(X, k, b):
     X = F.normalize(X, dim=1, p=2)
     index = 0
-    values = torch.zeros(X.shape[0] * (k + 1)).cuda()
-    rows = torch.zeros(X.shape[0] * (k + 1)).cuda()
-    cols = torch.zeros(X.shape[0] * (k + 1)).cuda()
-    norm_row = torch.zeros(X.shape[0]).cuda()
-    norm_col = torch.zeros(X.shape[0]).cuda()
+    values = torch.zeros(X.shape[0] * (k + 1)).to(X.device)
+    rows = torch.zeros(X.shape[0] * (k + 1)).to(X.device)
+    cols = torch.zeros(X.shape[0] * (k + 1)).to(X.device)
+    norm_row = torch.zeros(X.shape[0]).to(X.device)
+    norm_col = torch.zeros(X.shape[0]).to(X.device)
     while index < X.shape[0]:
         if (index + b) > (X.shape[0]):
             end = X.shape[0]
