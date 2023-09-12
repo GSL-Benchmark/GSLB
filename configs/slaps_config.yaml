@@ -142,7 +142,7 @@ cornell:
   dataset: cornell
   epochs_adj: 2000
   lr: 0.01
-  lr_adj: 0.001
+  lr_adj: 0.01
   w_decay: 0.0005
   nlayers: 2
   nlayers_adj: 2
@@ -150,18 +150,16 @@ cornell:
   hidden_adj: 512
   dropout1: 0.5
   dropout2: 0.5
-  dropout_adj1: 0.25
-  dropout_adj2: 0.5
-  k: 20
+  dropout_adj1: 0.5
+  dropout_adj2: 0.25
+  k: 30
   lambda_: 10.0
   nr: 5
   ratio: 10
   model: end2end
   sparse: 0
   learner: FP
-  non_linearity: relu
-  mlp_h: 1703
-  mlp_act: relu
+  non_linearity: elu
   epoch_d: 5
 
 actor:
@@ -194,7 +192,7 @@ texas:
   dataset: texas
   epochs_adj: 2000
   lr: 0.01
-  lr_adj: 0.001
+  lr_adj: 0.01
   w_decay: 0.0005
   nlayers: 2
   nlayers_adj: 2
@@ -202,25 +200,23 @@ texas:
   hidden_adj: 512
   dropout1: 0.5
   dropout2: 0.5
-  dropout_adj1: 0.25
-  dropout_adj2: 0.5
-  k: 20
+  dropout_adj1: 0.5
+  dropout_adj2: 0.25
+  k: 30
   lambda_: 10.0
   nr: 5
   ratio: 10
   model: end2end
   sparse: 0
   learner: FP
-  non_linearity: relu
-  mlp_h: 1703
-  mlp_act: relu
+  non_linearity: elu
   epoch_d: 5
 
 wisconsin:
   dataset: wisconsin
   epochs_adj: 2000
   lr: 0.01
-  lr_adj: 0.001
+  lr_adj: 0.01
   w_decay: 0.0005
   nlayers: 2
   nlayers_adj: 2
@@ -228,18 +224,16 @@ wisconsin:
   hidden_adj: 512
   dropout1: 0.5
   dropout2: 0.5
-  dropout_adj1: 0.25
-  dropout_adj2: 0.5
-  k: 20
+  dropout_adj1: 0.5
+  dropout_adj2: 0.25
+  k: 30
   lambda_: 10.0
   nr: 5
   ratio: 10
   model: end2end
   sparse: 0
   learner: FP
-  non_linearity: relu
-  mlp_h: 1703
-  mlp_act: relu
+  non_linearity: elu
   epoch_d: 5
 
 chameleon:
