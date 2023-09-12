@@ -1010,12 +1010,11 @@ def empirical_mean_loss(gcn,
             predictions = gcn(data.features, graph, params=model_parameters)
 
             val_losses.append(F.nll_loss(predictions[data.val_mask], data.labels[data.val_mask]).item())
-            val_accuracies.append(accuracy(predictions[data.val_mask], data.labels[data.val_mask]))
+            val_accuracies.append(accuracy(predictions[data.val_mask], data.labels[data.val_mask]).item())
 
             test_losses.append(F.nll_loss(predictions[data.test_mask], data.labels[data.test_mask]).item())
-            test_accuracies.append(accuracy(predictions[data.test_mask], data.labels[data.test_mask]))
+            test_accuracies.append(accuracy(predictions[data.test_mask], data.labels[data.test_mask]).item())
         # from IPython import embed; embed(header='empirical_mean_loss')
-
     val_metrics = Metrics(loss=np.mean(val_losses).item(), acc=np.mean(val_accuracies).item())
     test_metrics = Metrics(loss=np.mean(test_losses).item(), acc=np.mean(test_accuracies).item())
     return val_metrics, test_metrics
