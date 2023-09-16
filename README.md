@@ -145,7 +145,7 @@ Currently, we have implemented the following GSL algorithms:
 
 | Algorithm | Conference/Journal | Category | Paper | Code |
 | --------- | ------------------ | -------- | ----- | ---- |
-| LDS | ICML 2019 | Homogeneous GSL | [Learning Discrete Structures for Graph Neural Networks](http://proceedings.mlr.press/v97/franceschi19a/franceschi19a.pdf) | [Note](https://zepengzhang.com/Notes/2022/20220620.pdf) | [Link](https://github.com/lucfra/LDS-GNN) |
+| LDS | ICML 2019 | Homogeneous GSL | [Learning Discrete Structures for Graph Neural Networks](http://proceedings.mlr.press/v97/franceschi19a/franceschi19a.pdf) | [Link](https://github.com/lucfra/LDS-GNN) |
 | GRCN | ECML PKDD 2020 | Homogeneous GSL | [Graph-Revised Convolutional Network](https://arxiv.org/pdf/1911.07123.pdf) | [Link](https://github.com/PlusRoss/GRCN) |
 | ProGNN | KDD 202 | Homogeneous GSL | [Graph structure learning for robust graph neural networks](https://dl.acm.org/doi/pdf/10.1145/3394486.3403049) | [Link](https://github.com/ChandlerBang/Pro-GNN) |
 | IDGL | NeurIPS 2020 | Homogeneous GSL | [Iterative Deep Graph Learning for Graph Neural Networks: Better and Robust Node Embeddings](https://proceedings.neurips.cc/paper/2020/file/e05c7ba4e087beea9410929698dc41a6-Paper.pdf) | [Link](https://github.com/hugochan/IDGL) |
