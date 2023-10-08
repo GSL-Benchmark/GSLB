@@ -3,21 +3,11 @@ import pickle as pkl
 import platform
 import sys
 import urllib.request
-import zipfile
 import networkx as nx
 import numpy as np
 import scipy.sparse as sp
 import torch
-import dgl
-import time
-import json
-import random
-from dgl import ops
-from sklearn.model_selection import train_test_split
-from GSL.utils import (sample_mask, sparse_mx_to_torch_sparse_tensor, to_scipy, to_tensor,
-                       dense_adj_to_edge_index, row_normalize_features, to_undirected)
-from GSL.metric import InnerProductSimilarity, CosineSimilarity
-from GSL.processor import KNNSparsify, kneighbors_graph, KNearestNeighbour
+from GSL.utils import sample_mask, to_scipy, to_tensor, to_undirected
 
 
 def get_mask(idx, labels):
@@ -78,38 +68,6 @@ def rand_train_test_idx(label, train_prop=.5, valid_prop=.25, ignore_negative=Tr
     test_idx = labeled_nodes[test_indices]
 
     return train_idx, valid_idx, test_idx
-
-
-def random_coauthor_amazon_splits(labels, lcc_mask=None):
-    # Set random coauthor/co-purchase splits:
-    # * 20 * num_classes labels for training
-    # * 30 * num_classes labels for validation
-    # rest labels for testing
-
-    indices = []
-    num_classes = labels.max().item() + 1
-    if lcc_mask is not None:
-        for i in range(num_classes):
-            index = (labels[lcc_mask] == i).nonzero().view(-1)
-            index = index[torch.randperm(index.size(0))]
-            indices.append(index)
-    else:
-        for i in range(num_classes):
-            index = (labels == i).nonzero().view(-1)
-            index = index[torch.randperm(index.size(0))]
-            indices.append(index)
-
-    train_index = torch.cat([i[:20] for i in indices], dim=0)
-    val_index = torch.cat([i[20:50] for i in indices], dim=0)
-
-    rest_index = torch.cat([i[50:] for i in indices], dim=0)
-    rest_index = rest_index[torch.randperm(rest_index.size(0))]
-
-    # train_mask = index_to_mask(train_index, size=data.num_nodes)
-    # val_mask = index_to_mask(val_index, size=data.num_nodes)
-    # test_mask = index_to_mask(rest_index, size=data.num_nodes)
-
-    return train_index, val_index, rest_index
 
 
 class Dataset:

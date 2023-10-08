@@ -5,7 +5,6 @@ from GSL.utils import accuracy
 
 import torch
 import torch.nn.functional as F
-from tqdm import tqdm
 
 EOS = 1e-10
 
@@ -21,10 +20,10 @@ class GRCN(BaseModel):
         self.conv1 = GCNConv(num_features, self.nhid)
         self.conv2 = GCNConv(self.nhid, num_classes)
 
-        if self.config.sparse:
+        if self.config.layertype == 'diag':
             self.conv_graph = GCNConv_diag(num_features, device)
             self.conv_graph2 = GCNConv_diag(num_features, device)
-        else:
+        elif self.config.layertype == 'dense':
             self.conv_graph = GCNConv(num_features, self.graph_nhid)
             self.conv_graph2 = GCNConv(self.graph_nhid, self.graph_nhid2)
 
@@ -38,7 +37,6 @@ class GRCN(BaseModel):
         self.reduce = self.config.reduce
         self.sparse = self.config.sparse
         self.norm_mode = "sym"
-        self.config = self.config
 
     def init_para(self):
         self.conv1.init_para()
@@ -123,6 +121,7 @@ class GRCN(BaseModel):
             adj_new = torch.sparse.FloatTensor(new_inds, new_values, adj.size()).to(self.device)
             adj_new = self.normalize(adj_new, self.norm_mode)
 
+        self.adj_new = adj_new
         x = self.conv1(features, adj_new, self.sparse)
         x = F.dropout(self.F(x), training=self.training, p=self.dropout)
         x = self.conv2(x, adj_new, self.sparse)
@@ -130,9 +129,11 @@ class GRCN(BaseModel):
         return F.log_softmax(x, dim=1)
 
     def test(self, features, adj, labels, mask):
+        self.eval()
         with torch.no_grad():
             output = self.feedforward(features, adj)
         result = self.metric(output[mask], labels[mask])
+        self.train()
         return result.item()
 
     def fit(self, dataset, split_num=0):
@@ -174,13 +175,15 @@ class GRCN(BaseModel):
             optimizer_base.step()
             optimizer_graph.step()
 
-            if epoch % 10 == 0:
+            if epoch % 1 == 0:
                 train_result = self.test(features, adj, labels, train_mask)
                 val_result = self.test(features, adj, labels, val_mask)
                 test_result = self.test(features, adj, labels, test_mask)
                 if val_result > best_val_result:
                     best_val_result = val_result
                     self.best_result = test_result
+                    self.best_adj = self.adj_new.clone()
+                    torch.save(self.best_adj, './GRCN_adj.pt')
 
                 print(f'Epoch: {epoch: 02d}, '
                       f'Loss: {loss:.4f}, '

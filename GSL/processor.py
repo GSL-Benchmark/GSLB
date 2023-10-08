@@ -6,33 +6,26 @@ from torch.distributions.relaxed_bernoulli import RelaxedBernoulli
 
 
 class KNNSparsify:
-    def __init__(self, k):
+    def __init__(self, k, discrete=False, self_loop=True):
         super(KNNSparsify, self).__init__()
         self.k = k
+        self.discrete = discrete
+        self.self_loop = self_loop
 
     def __call__(self, adj):
-        values, indices = adj.topk(k=int(self.k+1), dim=-1)  # k+1 means self-loop and k nearest neighbors
+        _, indices = adj.topk(k=int(self.k+1), dim=-1)
         assert torch.max(indices) < adj.shape[1]
         mask = torch.zeros(adj.shape).to(adj.device)
         mask[torch.arange(adj.shape[0]).view(-1, 1), indices] = 1.
 
         mask.requires_grad = False
-        sparse_adj = adj * mask
-        return sparse_adj
-
-class KNearestNeighbour:
-    def __init__(self, k):
-        super(KNearestNeighbour, self).__init__()
-        self.k = k
-
-    def __call__(self, adj):
-        values, indices = adj.topk(k=int(self.k+1), dim=-1)
-        assert torch.max(indices) < adj.shape[1]
-        mask = torch.zeros(adj.shape).to(adj.device)
-        mask[torch.arange(adj.shape[0]).view(-1, 1), indices] = 1
-
-        mask.requires_grad = False
-        sparse_adj = mask.to(torch.int)
+        if self.discrete:
+            sparse_adj = mask.to(torch.float)
+        else:
+            sparse_adj = adj * mask
+        
+        if not self.self_loop:
+            sparse_adj.fill_diagonal_(0)
         return sparse_adj
 
 

@@ -7,9 +7,7 @@ from GSL.processor import *
 from GSL.eval import ClsEvaluator
 import torch
 import copy
-from tqdm import tqdm
 import torch.nn as nn
-from torch.nn import Sequential, Linear, ReLU
 import torch.nn.functional as F
 
 
@@ -17,8 +15,8 @@ class SUBLIME(BaseModel):
     '''
     Towards Unsupervised Deep Graph Structure Learning (WWW 2022')
     '''
-    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device):
-        super(SUBLIME, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, params):
+        super(SUBLIME, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device, params)
         self.num_features = num_features
         self.num_classes = num_classes
 
@@ -54,12 +52,14 @@ class SUBLIME(BaseModel):
 
         #TODO: Graph Learner Initialize
         metric = CosineSimilarity()
-        knnsparsify = KNNSparsify(self.config.k)
-        processors = [knnsparsify]
+        knnsparsify = KNNSparsify(self.config.k, discrete=True, self_loop=False)
+        linear_trans = LinearTransform(6)
+        processors = [knnsparsify, linear_trans]
+        nonlinear = NonLinearize(non_linearity='elu')
         if self.config.learner == 'mlp':
             graph_learner = MLPLearner(metric, processors, 2, features.shape[1], features.shape[1], activation, self.config.sparse, self.config.k)
         elif self.config.learner == 'full':
-            graph_learner = FullParam(metric, processors, features.cpu(), self.config.sparse)
+            graph_learner = FullParam(metric, processors, features.cpu(), self.config.sparse, nonlinear)
         elif self.config.learner == 'gnn':
             graph_learner = GNNLearner(metric, processors, 2, features.shape[1], features.shape[1], activation)
         elif self.config.learner == 'att':
@@ -82,7 +82,7 @@ class SUBLIME(BaseModel):
         if not self.config.sparse:
             anchor_adj = anchor_adj.to(self.device)
 
-        best_test_acc, best_val_acc = 0, 0
+        best_val_result = 0
         for epoch in range(self.config.num_epochs):
             # Training
             model.train()
@@ -106,20 +106,24 @@ class SUBLIME(BaseModel):
                     anchor_adj = anchor_adj * self.config.tau + Adj.detach() * (1 - self.config.tau)
 
             # Evaluate
-            if epoch % 20 == 0:
+            if epoch % self.config.eval_step == 0:
+                model.eval()
+                graph_learner.eval()
+                f_adj = Adj
+
                 ClsEval = ClsEvaluator('GCN', self.config, self.num_features, self.num_classes, self.device)
-                result = ClsEval(features, anchor_adj, train_mask, \
+                result = ClsEval(features, f_adj, train_mask, \
                                             val_mask, test_mask, labels)
-                val_acc, test_acc = result['Acc_val'], result['Acc_test']
-                if val_acc > best_val_acc:
-                    self.best_test_acc = test_acc
-                    best_val_acc = val_acc
+                val_result, test_result = result['Acc_val'], result['Acc_test']
+                if val_result > best_val_result:
+                    self.best_result = test_result
+                    best_val_result = val_result
                     self.Adj = anchor_adj
 
                 print(f'Epoch: {epoch: 02d}, '
                       f'Loss: {loss:.4f}, '
-                      f'Valid: {100 * val_acc:.2f}%, '
-                      f'Test: {100 * test_acc:.2f}%')
+                      f'Valid: {100 * val_result:.2f}%, '
+                      f'Test: {100 * test_result:.2f}%')
 
 
 

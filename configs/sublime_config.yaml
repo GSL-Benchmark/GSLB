@@ -30,8 +30,6 @@ Default:
   contrast_batch_size: 0
 
 cora:
-  seed: 1
-  dataset: cora
   lr: 0.01
   lr_cls: 0.001
   num_hidden: 512
@@ -55,10 +53,11 @@ cora:
   dropedge_rate_eval: 0.75
   tau: 0.9999
   c: 0
-  learner: mlp
+  learner: full
   maskfeat_rate_anchor: 0.6
   maskfeat_rate_learner: 0.7
   contrast_batch_size: 0
+  eval_step: 50
 
 citeseer:
   seed: 1

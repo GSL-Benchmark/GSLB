@@ -1,9 +1,7 @@
 import datetime
-import json
 import os
 import pickle
 import random
-import shutil
 import time
 from copy import deepcopy
 from typing import NamedTuple
@@ -21,13 +19,13 @@ import torch.nn.functional as F
 import yaml
 from sklearn.model_selection import StratifiedShuffleSplit
 from dgl.data import DGLDataset
-from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import StratifiedKFold
 from math import sqrt
+import math
 
 
 from GSL.metric import CosineSimilarity
-from GSL.processor import KNearestNeighbour
+from GSL.processor import KNNSparsify
 
 EOS = 1e-10
 VERY_SMALL_NUMBER = 1e-12
@@ -698,7 +696,7 @@ def random_add_edge(adj, add_rate):
 def get_knn_graph(features, k, dataset):
     metric = CosineSimilarity()
     adj = metric(features, features)
-    adj = KNearestNeighbour(k=k)(adj).numpy()
+    adj = KNNSparsify(k=k, discrete=True)(adj).numpy()
     if dataset != "ogbn-arxiv":
         adj = nx.adjacency_matrix(nx.from_numpy_array(adj))
     else:
@@ -883,9 +881,6 @@ class PolynomialLRDecay(_LRScheduler):
             ]
             for param_group, lr in zip(self.optimizer.param_groups, decay_lrs):
                 param_group["lr"] = lr
-
-
-import math
 
 
 class MemoryMoCo(nn.Module):
