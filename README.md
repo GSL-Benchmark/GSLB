@@ -14,7 +14,7 @@ GSLB is a Graph Structure Learning (GSL) library and benchmark based on [DGL](ht
 
 Graph Structure Learning (GSL) aims to optimize both the parameters of Graph Neural Networks (GNNs) and the computation graph structure simultaneously. GSL methods start with input features and an optimal initial graph structure. Its corresponding computation graph is iteratively refined through a structure learning module. With the refined computation graph ,GNNs are used to generate graph representations. Then parameters of the GNNs and the structure modeling module are jointly updated, either simultaneously or alternatively, util a preset stopping condition is satisfied.
 
-If you want to explore more information about GSL, please refer to our [survey](https://www.researchgate.net/profile/Yanqiao-Zhu/publication/349787551_Deep_Graph_Structure_Learning_for_Robust_Representations_A_Survey/links/6137188538818c2eaf885a3f/Deep-Graph-Structure-Learning-for-Robust-Representations-A-Survey.pdf) and [paper collection](https://github.com/GSL-Benchmark/Awesome-Graph-Structure-Learning).
+If you want to explore more information about GSL, please refer to our [Paper](https://arxiv.org/abs/2310.05174), [survey](https://www.researchgate.net/profile/Yanqiao-Zhu/publication/349787551_Deep_Graph_Structure_Learning_for_Robust_Representations_A_Survey/links/6137188538818c2eaf885a3f/Deep-Graph-Structure-Learning-for-Robust-Representations-A-Survey.pdf), and [paper collection](https://github.com/GSL-Benchmark/Awesome-Graph-Structure-Learning).
 
 ## 🚀 Get Start
 
@@ -50,7 +50,7 @@ Then, you can import `GSL` from your current environment.
 If you want to quickly run an existing GSL model on a graph dataset:
 
 ```python
-python main.py --dataset dataset_name --model model_name -n num_trails -g 0 --use_knn -k 5 --use_mettack --sparse --metric acc -p 0. --drop_rate 0. --add_rate 0.
+python main.py --dataset dataset_name --model model_name --num_trails --gpu_num 0 --use_knn --k 5 --use_mettack --sparse --metric acc --ptb_rate 0. --drop_rate 0. --add_rate 0.
 ```
 
 Optional arguments:
@@ -59,7 +59,7 @@ Optional arguments:
 
 ``--model`` : the name of GSL model
 
-``--ntrail -n`` : repetition count of experiments
+``--ntrail`` : repetition count of experiments
 
 ``--use_knn`` : whether to use knn graph instead of the original graph
 
@@ -73,11 +73,11 @@ Optional arguments:
 
 ``--use_mettack`` : whether to use the structure after being attacked by mettack
 
-``--ptb_rate -p`` : the perturbation rate
+``--ptb_rate`` : the perturbation rate
 
 ``--metric`` : the evaluation metric
 
-``--gpu_num -g`` : the selected GPU number
+``--gpu_num`` : the selected GPU number
 
 *Example: Train GRCN on Cora dataset, with the evaluation metric is accuracy.*
 
@@ -161,3 +161,16 @@ Currently, we have implemented the following GSL algorithms:
 | HGSL | AAAI 2021 | Heterogeneous GSL | [Heterogeneous Graph Structure Learning for Graph Neural Networks](https://ojs.aaai.org/index.php/AAAI/article/view/16600) | [Link](https://github.com/AndyJZhao/HGSL) |
 | HGP-SL | AAAI 2020 | Graph-level GSL | [Hierarchical Graph Pooling with Structure Learning](https://arxiv.org/abs/1911.05954) | [Link](https://github.com/cszhangzhen/HGP-SL) |
 | VIB-GSL | AAAI 2022 | Graph-level GSL | [Graph Structure Learning with Variational Information Bottleneck](https://ojs.aaai.org/index.php/AAAI/article/view/20335) | [Link](https://github.com/RingBDStack/VIB-GSL) |
+
+
+## Cite Us
+
+Feel free to cite this work if you find it useful to you!
+```
+@article{li2023gslb,
+  title={GSLB: The Graph Structure Learning Benchmark},
+  author={Li, Zhixun and Wang, Liang and Sun, Xin and Luo, Yifan and Zhu, Yanqiao and Chen, Dingshuo and Luo, Yingtao and Zhou, Xiangxin and Liu, Qiang and Wu, Shu and others},
+  journal={arXiv preprint arXiv:2310.05174},
+  year={2023}
+}
+```
