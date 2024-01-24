@@ -101,11 +101,12 @@ class SparseDropout(nn.Module):
 
 
 class GCN(nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, dropout_adj, sparse=False, residual=False, activation_last=None, conv_bias=False, bn=False):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, dropout_adj, device, sparse=False, residual=False, activation_last=None, conv_bias=False, bn=False):
         super(GCN, self).__init__()
 
         self.residual = residual
         self.layers = nn.ModuleList()
+        self.device = device
         self.bn = bn
         if self.bn:
             self.bn_list = nn.ModuleList()
@@ -134,6 +135,7 @@ class GCN(nn.Module):
     def forward(self, x, adj_t, return_hidden=False):
         # from IPython import embed; embed(header='gcn.py, line 131')
         Adj = self.dropout_adj(adj_t)
+        x = x.to(self.device)
         is_torch_sparse_tensor = Adj.is_sparse
         outputs = []
 
@@ -167,7 +169,7 @@ class GCN(nn.Module):
         if return_hidden:
             return tuple(outputs)
         return x
-    
+
 
     def reset_parameters(self):
         for conv in self.layers:
@@ -199,14 +201,14 @@ class GCN_dgl(nn.Module):
     def reset_parameters(self):
         for conv in self.layers:
             conv.reset_parameters()
-    
+
     def _stochastic_forward(self, blocks, x):
-        
+
         for i, (conv, block) in enumerate(zip(self.layers[:-1], blocks[:-1])):
             x = conv(block, x)
             x = F.relu(x)
             x = F.dropout(x, p=self.dropout, training=self.training)
-        
+
         x = self.layers[-1](blocks[-1], x)
         if self.activation_last == 'log_softmax':
             x = F.log_softmax(x, dim=1)
@@ -219,7 +221,7 @@ class GCN_dgl(nn.Module):
         Adj = adj_t
         if stochastic:
             return self._stochastic_forward(Adj, x)
-            
+
         if self.dropout_adj_p > 0:
             Adj.edata['w'] = F.dropout(Adj.edata['w'], p=self.dropout_adj_p, training=self.training)
         for i, conv in enumerate(self.layers[:-1]):
@@ -282,7 +284,7 @@ class GraphEncoder(nn.Module):
         x = self.gnn_encoder_layers[-1](x, Adj)
         z = self.proj_head(x)
         return z, x
-    
+
 
 class MetaDenseGraphConvolution(MetaModule):
     def __init__(self, in_features, out_features, use_bias=True):
@@ -297,7 +299,7 @@ class MetaDenseGraphConvolution(MetaModule):
     def forward(self, node_features, dense_adj, params=None):
         embeddings = self.fc.forward(node_features, params=get_subdict(params, "fc"))
         return torch.mm(dense_adj, embeddings)
-    
+
 
 class MetaDenseGCN(MetaModule):
     """
