@@ -8,3 +8,13 @@ dist/
 *.egg-info/
 temp*
 *.pkl
+*.npz
+*.npy
+*.allx
+*.graph
+*.index
+*.ally
+*.tx
+*.ty
+*.x
+*.y

@@ -3,28 +3,34 @@ from GSL.encoder.gcn import GCNConv, GCNConv_diag
 from GSL.metric import InnerProductSimilarity
 from GSL.utils import accuracy
 
+import numpy as np
+from scipy.sparse import coo_matrix
 import torch
 import torch.nn.functional as F
+from tqdm import tqdm
 
 EOS = 1e-10
 
 
 class GRCN(BaseModel):
-    """Graph-Revised Convulutional Network (ECML-PKDD 2020)"""
-    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, params=None):
-        super(GRCN, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device, params)
+
+    """Graph-Revised Convolutional Network (ECML-PKDD 2020)"""
+
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device):
+        super(GRCN, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
+        self.device = device
         self.num_features = num_features
         self.graph_nhid = int(self.config.hid_graph.split(":")[0])
         self.graph_nhid2 = int(self.config.hid_graph.split(":")[1])
         self.nhid = self.config.nhid
-        self.conv1 = GCNConv(num_features, self.nhid)
+        self.conv1 = GCNConv(self.num_features, self.nhid)
         self.conv2 = GCNConv(self.nhid, num_classes)
 
-        if self.config.layertype == 'diag':
-            self.conv_graph = GCNConv_diag(num_features, device)
-            self.conv_graph2 = GCNConv_diag(num_features, device)
-        elif self.config.layertype == 'dense':
-            self.conv_graph = GCNConv(num_features, self.graph_nhid)
+        if self.config.sparse:
+            self.conv_graph = GCNConv_diag(self.num_features, self.device)
+            self.conv_graph2 = GCNConv_diag(self.num_features, self.device)
+        else:
+            self.conv_graph = GCNConv(self.num_features, self.graph_nhid)
             self.conv_graph2 = GCNConv(self.graph_nhid, self.graph_nhid2)
 
         self.F = ({'relu': F.relu, 'prelu': F.prelu, 'tanh': torch.tanh})[self.config.F]
@@ -37,6 +43,7 @@ class GRCN(BaseModel):
         self.reduce = self.config.reduce
         self.sparse = self.config.sparse
         self.norm_mode = "sym"
+        self.config = self.config
 
     def init_para(self):
         self.conv1.init_para()
@@ -71,7 +78,7 @@ class GRCN(BaseModel):
             else:
                 exit("wrong norm mode")
             new_values = adj.values() * D_value
-            return torch.sparse.FloatTensor(adj.indices(), new_values, adj.size()).to(self.device)
+            return torch.sparse_coo_tensor(adj.indices(), new_values, adj.size()).to(self.device)
 
     def _node_embeddings(self, features, adj):
         norm_adj = self.normalize(adj, self.norm_mode)
@@ -121,7 +128,6 @@ class GRCN(BaseModel):
             adj_new = torch.sparse.FloatTensor(new_inds, new_values, adj.size()).to(self.device)
             adj_new = self.normalize(adj_new, self.norm_mode)
 
-        self.adj_new = adj_new
         x = self.conv1(features, adj_new, self.sparse)
         x = F.dropout(self.F(x), training=self.training, p=self.dropout)
         x = self.conv2(x, adj_new, self.sparse)
@@ -129,15 +135,13 @@ class GRCN(BaseModel):
         return F.log_softmax(x, dim=1)
 
     def test(self, features, adj, labels, mask):
-        self.eval()
         with torch.no_grad():
             output = self.feedforward(features, adj)
         result = self.metric(output[mask], labels[mask])
-        self.train()
         return result.item()
 
     def fit(self, dataset, split_num=0):
-        adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
+        adj, features, labels = dataset.adj.copy(), dataset.features.clone(), dataset.labels
         if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
             train_mask = dataset.train_masks[split_num % 10]
             val_mask = dataset.val_masks[split_num % 10]
@@ -145,19 +149,29 @@ class GRCN(BaseModel):
         else:
             train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
 
-        if adj.is_sparse:
-            indices = adj.coalesce().indices()
-            values = adj.coalesce().values()
-            shape = adj.coalesce().shape
-            num_nodes = features.shape[0]
-            loop_edge_index = torch.stack([torch.arange(num_nodes), torch.arange(num_nodes)]).to(adj.device)
-            loop_edge_index = torch.cat([indices, loop_edge_index], dim=1)
-            loop_values = torch.ones(num_nodes).to(adj.device)
-            loop_values = torch.cat([values, loop_values], dim=0)
-            adj = torch.sparse_coo_tensor(indices=loop_edge_index, values=loop_values, size=shape)
-        else:
-            adj += torch.eye(adj.shape[0]).to(self.device)
-            adj = adj.to_sparse()
+        # if self.sparse: ??
+
+        # if adj.is_sparse:
+        #     indices = adj.coalesce().indices()
+        #     values = adj.coalesce().values()
+        #     shape = adj.coalesce().shape
+        #     num_nodes = features.shape[0]
+        #     loop_edge_index = torch.stack([torch.arange(num_nodes), torch.arange(num_nodes)]).to(adj.device)
+        #     loop_edge_index = torch.cat([indices, loop_edge_index], dim=1)
+        #     loop_values = torch.ones(num_nodes).to(adj.device)
+        #     loop_values = torch.cat([values, loop_values], dim=0)
+        #     adj = torch.sparse_coo_tensor(indices=loop_edge_index, values=loop_values, size=shape)
+        # else:
+        #     adj += torch.eye(adj.shape[0]).to(self.device)
+        #     adj = adj.to_sparse()
+
+        coo = coo_matrix(adj)
+        values = coo.data
+        indices = np.vstack((coo.row, coo.col))
+        i = torch.LongTensor(indices)
+        v = torch.FloatTensor(values)
+        shape = coo.shape
+        adj = torch.sparse_coo_tensor(i, v, torch.Size(shape))
 
         optimizer_base = torch.optim.Adam(self.base_parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
         optimizer_graph = torch.optim.Adam(self.graph_parameters(), lr=self.config.lr_graph, weight_decay=self.config.weight_decay_graph)
@@ -175,19 +189,16 @@ class GRCN(BaseModel):
             optimizer_base.step()
             optimizer_graph.step()
 
-            if epoch % 1 == 0:
+            if epoch % 10 == 0:
                 train_result = self.test(features, adj, labels, train_mask)
                 val_result = self.test(features, adj, labels, val_mask)
                 test_result = self.test(features, adj, labels, test_mask)
                 if val_result > best_val_result:
                     best_val_result = val_result
                     self.best_result = test_result
-                    self.best_adj = self.adj_new.clone()
-                    torch.save(self.best_adj, './GRCN_adj.pt')
 
                 print(f'Epoch: {epoch: 02d}, '
                       f'Loss: {loss:.4f}, '
                       f'Train: {100 * train_result:.2f}%, '
                       f'Valid: {100 * val_result:.2f}%, '
                       f'Test: {100 * test_result:.2f}%')
-
