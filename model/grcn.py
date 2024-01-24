@@ -111,7 +111,6 @@ class GRCN(BaseModel):
 
     def feedforward(self, features, adj):
         adj.requires_grad = False
-
         node_embeddings = self._node_embeddings(features, adj)
 
         metric = InnerProductSimilarity()
@@ -128,9 +127,9 @@ class GRCN(BaseModel):
             adj_new = torch.sparse.FloatTensor(new_inds, new_values, adj.size()).to(self.device)
             adj_new = self.normalize(adj_new, self.norm_mode)
 
-        x = self.conv1(features, adj_new, self.sparse)
+        x = self.conv1(features, adj_new, sparse=self.sparse)
         x = F.dropout(self.F(x), training=self.training, p=self.dropout)
-        x = self.conv2(x, adj_new, self.sparse)
+        x = self.conv2(x, adj_new, sparse=self.sparse)
 
         return F.log_softmax(x, dim=1)
 
@@ -141,7 +140,7 @@ class GRCN(BaseModel):
         return result.item()
 
     def fit(self, dataset, split_num=0):
-        adj, features, labels = dataset.adj.copy(), dataset.features.clone(), dataset.labels
+        adj, features, labels = dataset.adj.copy(), dataset.features.clone().to(self.device), dataset.labels.to(self.device)
         if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
             train_mask = dataset.train_masks[split_num % 10]
             val_mask = dataset.val_masks[split_num % 10]
@@ -171,7 +170,7 @@ class GRCN(BaseModel):
         i = torch.LongTensor(indices)
         v = torch.FloatTensor(values)
         shape = coo.shape
-        adj = torch.sparse_coo_tensor(i, v, torch.Size(shape))
+        adj = torch.sparse_coo_tensor(i, v, torch.Size(shape)).to(self.device)
 
         optimizer_base = torch.optim.Adam(self.base_parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
         optimizer_graph = torch.optim.Adam(self.graph_parameters(), lr=self.config.lr_graph, weight_decay=self.config.weight_decay_graph)

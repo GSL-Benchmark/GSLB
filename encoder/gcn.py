@@ -15,13 +15,17 @@ from .metamodule import MetaModule, MetaLinear, get_subdict
 
 
 class GCNConv(nn.Module):
-    def __init__(self, input_size, output_size, residual=False, bias=False, activation=None):
+    def __init__(self, input_size, output_size, device, residual=False, bias=False, activation=None):
         super(GCNConv, self).__init__()
-        self.linear = nn.Linear(input_size, output_size)
+
+        self.device = device
+
+        self.linear = nn.Linear(input_size, output_size).to(self.device)
         self.activation = activation
         self.residual = residual
+
         if bias:
-            self.bias = Parameter(torch.FloatTensor(output_size))
+            self.bias = Parameter(torch.FloatTensor(output_size).to(self.device))
         else:
             self.register_parameter('bias', None)
 
@@ -34,6 +38,7 @@ class GCNConv(nn.Module):
             self.bias.data.uniform_(-std, std)
 
     def forward(self, input, A, sparse=False):
+
         hidden = self.linear(input)
         if sparse:
             output = torch.sparse.mm(A, hidden)
@@ -54,9 +59,10 @@ class GCNConv_diag(torch.nn.Module):
     '''
     def __init__(self, input_size, device):
         super(GCNConv_diag, self).__init__()
-        self.W = torch.nn.Parameter(torch.ones(input_size).to(device))
-        self.input_size = input_size
         self.device = device
+
+        self.W = torch.nn.Parameter(torch.ones(input_size).to(self.device))
+        self.input_size = input_size
 
     def init_para(self):
         self.W = torch.nn.Parameter(torch.ones(self.input_size).to(self.device))
