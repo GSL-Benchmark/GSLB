@@ -15,17 +15,19 @@ from .metamodule import MetaModule, MetaLinear, get_subdict
 
 
 class GCNConv(nn.Module):
-    def __init__(self, input_size, output_size, device, residual=False, bias=False, activation=None):
+    def __init__(self, input_size, output_size, residual=False, bias=False, activation=None):
         super(GCNConv, self).__init__()
 
-        self.device = device
+        #self.device = device
 
-        self.linear = nn.Linear(input_size, output_size).to(self.device)
+        #self.linear = nn.Linear(input_size, output_size).to(self.device)
+        self.linear = nn.Linear(input_size, output_size)
         self.activation = activation
         self.residual = residual
 
         if bias:
-            self.bias = Parameter(torch.FloatTensor(output_size).to(self.device))
+            #self.bias = Parameter(torch.FloatTensor(output_size).to(self.device))
+            self.bias = Parameter(torch.FloatTensor(output_size))
         else:
             self.register_parameter('bias', None)
 
