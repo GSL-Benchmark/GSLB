@@ -98,7 +98,7 @@ def normalize(adj, mode, sparse=False):
             exit("wrong norm mode")
         new_values = adj.values() * D_value
 
-        return torch.sparse.FloatTensor(adj.indices(), new_values, adj.size())
+        return torch.sparse_coo_tensor(adj.indices(), new_values, adj.size())
 
 
 def accuracy(output, labels):
@@ -210,7 +210,7 @@ def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     )
     values = torch.from_numpy(sparse_mx.data)
     shape = torch.Size(sparse_mx.shape)
-    return torch.sparse.FloatTensor(indices, values, shape)
+    return torch.sparse_coo_tensor(indices, values, shape)
 
 
 class AverageMeter(object):
@@ -566,7 +566,7 @@ def mx_normalize_features(mx):
     r_mat_inv = sp.diags(r_inv)
     mx = r_mat_inv.dot(mx)
     return mx
-    
+
 
 def dense_adj_to_edge_index(adj):
     edge_index = sp.coo_matrix(adj.cpu())
@@ -1159,7 +1159,7 @@ def shuffle_splits_(data, seed=None) -> None:
                                       test_size=test_size.cpu(),
                                       train_size=val_size.cpu() + train_size.cpu(),
                                       random_state=seed)
-    
+
     train_val_indices, test_indices = next(splitter.split(data.features.cpu(), data.labels.cpu()))
 
     train_val_splitter = StratifiedShuffleSplit(n_splits=1,
@@ -1176,5 +1176,5 @@ def shuffle_splits_(data, seed=None) -> None:
     train_mask = indices_to_mask(train_indices, train_mask.size(0))
     val_mask = indices_to_mask(val_indices, val_mask.size(0))
     test_mask = indices_to_mask(test_indices, test_mask.size(0))
-    
+
     data.train_mask, data.val_mask, data.test_mask = train_mask, val_mask, test_mask

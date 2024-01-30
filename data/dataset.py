@@ -25,7 +25,7 @@ def normalize_adj(mx):
     """Normalize sparse adjacency matrix"""
     if type(mx) is not sp.lil.lil_matrix:
         mx = mx.tolil()
-    if mx[0, 0] == 0 :
+    if mx[0, 0] == 0:
         mx = mx + sp.eye(mx.shape[0])
     rowsum = np.array(mx.sum(1))
     r_inv = np.power(rowsum, -1/2).flatten()

@@ -143,7 +143,7 @@ class GCN(nn.Module):
     def forward(self, x, adj_t, return_hidden=False):
         # from IPython import embed; embed(header='gcn.py, line 131')
         Adj = self.dropout_adj(adj_t)
-        x = x.to(self.device)
+        #x = x.to(self.device)
         is_torch_sparse_tensor = Adj.is_sparse
         outputs = []
 
