@@ -18,3 +18,8 @@ temp*
 *.ty
 *.x
 *.y
+gslb_data/IMDB-BINARY_3673667b/tu_IMDB-BINARY.bin
+gslb_data/IMDB-BINARY_3673667b/IMDB-BINARY/IMDB-BINARY_graph_labels.txt
+gslb_data/IMDB-BINARY_3673667b/IMDB-BINARY/IMDB-BINARY_graph_indicator.txt
+gslb_data/IMDB-BINARY_3673667b/IMDB-BINARY/IMDB-BINARY_A.txt
+gslb_data/IMDB-BINARY.zip
