@@ -1,4 +1,5 @@
-from torch.utils.data.sampler import SubsetRandomSampler
+from torch.utils.data.sampler import Sampler, SubsetRandomSampler
+from torch.utils.data import random_split
 from dgl.nn import AvgPooling, GraphConv, MaxPooling, GATConv, SAGEConv, GINConv
 import dgl.function as fn
 from dgl.base import ALL, is_all
@@ -113,11 +114,12 @@ class HGPSL(BaseModel):
         self.train()
         total_loss = 0.0
         num_batches = len(train_loader)
-        for batch in train_loader.dataset.dgl_dataset:
+        for batch in train_loader:
             optimizer.zero_grad()
             batch_graphs, batch_labels = batch
             batch_graphs = batch_graphs.to(self.device)
-            out = self(batch_graphs, batch_graphs.ndata["feat"])
+            batch_labels = batch_labels.long().to(self.device)
+            out = self.forward(batch_graphs, batch_graphs.ndata["node_attr"].float())
             loss = self.loss_func(out, batch_labels)
             loss.backward()
             optimizer.step()
@@ -147,7 +149,7 @@ class HGPSL(BaseModel):
             # from IPython import embed; embed()
             result = eval_ap(pred.cpu().numpy(), labels.numpy())
         else:
-            pred = pred.argmax(dim=1).cpu()
+            pred = pred.argmax(dim=1)
             result = pred.eq(labels.reshape(-1, pred.size(0))).sum().item()
             # from IPython import embed; embed(header='in metric_func')
 
@@ -160,16 +162,30 @@ class HGPSL(BaseModel):
         loss = 0.0
         num_graphs = 0
         with torch.no_grad():
-            for batch in loader.dataset.dgl_dataset:
+            for batch in loader:
                 batch_graphs, batch_labels = batch
                 num_graphs += batch_labels.size(0)
+                batch_labels = batch_labels.long().to(self.device)
                 batch_graphs = batch_graphs.to(self.device)
-                out = self(batch_graphs, batch_graphs.ndata["feat"])
+                out = self.forward(batch_graphs, batch_graphs.ndata["node_attr"].float())
                 loss += self.loss_func(out, batch_labels)
                 correct += self.metric_func(out, batch_labels)
         result = correct / num_graphs
         # from IPython import embed; embed(header='in Test: ')
         return result, loss / len(loader)
+
+        # num_batches = len(train_loader)
+        # for batch in train_loader:
+        #     optimizer.zero_grad()
+        #     batch_graphs, batch_labels = batch
+        #     batch_graphs = batch_graphs.to(self.device)
+        #     batch_labels = batch_labels.long().to(self.device)
+        #     out = self.forward(batch_graphs, batch_graphs.ndata["node_attr"].float())
+        #     loss = self.loss_func(out, batch_labels)
+        #     loss.backward()
+        #     optimizer.step()
+
+        #     total_loss += loss.item()
 
     def fit(self, dataset, logger=None):
         folds, epochs, batch_size, test_batch_size, lr, weight_decay \
@@ -264,22 +280,27 @@ class HGPSL(BaseModel):
 
 
     def fit_without_kfold(self, dataset):
-        split_dict = get_idx_split(dataset)
-        train_dataset, val_dataset, test_dataset = (Subset(dataset, split_dict['train']),
-                                                Subset(dataset, split_dict['val']),
-                                                Subset(dataset, split_dict['test']))
-        train_loader = GraphDataLoader(train_dataset, batch_size=self.batch_size)
-        val_loader = GraphDataLoader(val_dataset, batch_size=self.batch_size)
-        test_loader = GraphDataLoader(test_dataset, batch_size=self.batch_size)
+
+        for i in range(len(dataset)):
+            dataset.graph_lists[i] = dgl.add_self_loop(dataset.graph_lists[i])
+
+        num_training = int(len(dataset) * 0.8)
+        num_val = int(len(dataset) * 0.1)
+        num_test = len(dataset) - num_val - num_training
+        train_set, val_set, test_set = random_split(dataset, [num_training, num_val, num_test])
+
+        train_loader = GraphDataLoader(train_set, batch_size=self.config.batch_size)
+        val_loader = GraphDataLoader(val_set, batch_size=self.config.test_batch_size)
+        test_loader = GraphDataLoader(test_set, batch_size=self.config.test_batch_size)
 
         self.reset_parameters()
         optimizer = torch.optim.Adam(
-                self.parameters(), lr=self.lr, weight_decay=self.weight_decay
+                self.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay
         )
 
         best_test_result, best_val = 0, float("inf")
 
-        for epoch in range(self.epochs):
+        for epoch in range(self.config.epochs):
             loss = self.train_HGPSL(train_loader, optimizer)
             train_result, _ = self.test(train_loader)
             val_result, val_loss = self.test(val_loader)
