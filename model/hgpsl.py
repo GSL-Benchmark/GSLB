@@ -174,19 +174,6 @@ class HGPSL(BaseModel):
         # from IPython import embed; embed(header='in Test: ')
         return result, loss / len(loader)
 
-        # num_batches = len(train_loader)
-        # for batch in train_loader:
-        #     optimizer.zero_grad()
-        #     batch_graphs, batch_labels = batch
-        #     batch_graphs = batch_graphs.to(self.device)
-        #     batch_labels = batch_labels.long().to(self.device)
-        #     out = self.forward(batch_graphs, batch_graphs.ndata["node_attr"].float())
-        #     loss = self.loss_func(out, batch_labels)
-        #     loss.backward()
-        #     optimizer.step()
-
-        #     total_loss += loss.item()
-
     def fit(self, dataset, logger=None):
         folds, epochs, batch_size, test_batch_size, lr, weight_decay \
             = self.config.folds, self.config.epochs, self.config.batch_size, self.config.test_batch_size, \
