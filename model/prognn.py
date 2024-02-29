@@ -3,6 +3,7 @@ from copy import deepcopy
 
 import numpy as np
 import scipy.sparse as sp
+from scipy.sparse import coo_matrix
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -118,9 +119,10 @@ class ProGNN(BaseModel):
         self.best_val_loss = 10
         self.best_graph = None
         self.weights = None
+        self.device = device
 
     def fit(self, dataset, split_num=0):
-        adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
+        adj, features, labels = dataset.adj.copy(), dataset.features.clone(), dataset.labels
         if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
             train_mask = dataset.train_masks[split_num % 10]
             val_mask = dataset.val_masks[split_num % 10]
@@ -128,34 +130,43 @@ class ProGNN(BaseModel):
         else:
             train_mask, val_mask, test_mask = dataset.train_mask, dataset.val_mask, dataset.test_mask
 
-        if adj.is_sparse:
-            indices = adj.coalesce().indices()
-            values = adj.coalesce().values()
-            shape = adj.coalesce().shape
-            num_nodes = features.shape[0]
-            loop_edge_index = torch.stack([torch.arange(num_nodes), torch.arange(num_nodes)]).to(adj.device)
-            loop_edge_index = torch.cat([indices, loop_edge_index], dim=1)
-            loop_values = torch.ones(num_nodes).to(adj.device)
-            loop_values = torch.cat([values, loop_values], dim=0)
-            adj = torch.sparse_coo_tensor(indices=loop_edge_index, values=loop_values, size=shape)
-        else:
-            adj += torch.eye(adj.shape[0]).to(self.device)
-            # adj = adj.to_sparse()
-        
+        # if adj.is_sparse:
+        #     indices = adj.coalesce().indices()
+        #     values = adj.coalesce().values()
+        #     shape = adj.coalesce().shape
+        #     num_nodes = features.shape[0]
+        #     loop_edge_index = torch.stack([torch.arange(num_nodes), torch.arange(num_nodes)]).to(adj.device)
+        #     loop_edge_index = torch.cat([indices, loop_edge_index], dim=1)
+        #     loop_values = torch.ones(num_nodes).to(adj.device)
+        #     loop_values = torch.cat([values, loop_values], dim=0)
+        #     adj = torch.sparse_coo_tensor(indices=loop_edge_index, values=loop_values, size=shape)
+        # else:
+        #     adj += torch.eye(adj.shape[0]).to(self.device)
+        #     # adj = adj.to_sparse()
+
+        coo = coo_matrix(adj)
+        values = coo.data
+        indices = np.vstack((coo.row, coo.col))
+        i = torch.LongTensor(indices)
+        v = torch.FloatTensor(values)
+        shape = coo.shape
+        adj = torch.sparse_coo_tensor(i, v, torch.Size(shape))
+        adj = adj.to_dense().to(self.device) # try converting to dense representation here
+
         idx_train, idx_val, idx_test = train_mask.nonzero().view(-1), val_mask.nonzero().view(-1), test_mask.nonzero().view(-1)
-            
+
         self.model = GCN(
             in_channels=features.shape[1],
             hidden_channels=self.config["hidden"],
             out_channels=labels.max().item() + 1,
             num_layers=2,
+            device = self.device,
             dropout=self.config["dropout"],
             dropout_adj=0.0,
             sparse=False,
             activation_last="log_softmax",
-        )
-        self.model = self.model.to(self.device)
-        
+        ).to(self.device)
+
         config = self.config
 
         self.optimizer = optim.Adam(
@@ -209,6 +220,7 @@ class ProGNN(BaseModel):
     def train_gcn(self, epoch, features, adj, labels, idx_train, idx_val):
         config = self.config
         estimator = self.estimator
+        labels = labels.to(self.device)
         adj = self.normalizer(estimator.adj + torch.eye(adj.shape[0]).to(self.device))
         t = time.time()
         self.model.train()
@@ -260,20 +272,26 @@ class ProGNN(BaseModel):
                 )
 
     def train_adj(self, epoch, features, adj, labels, idx_train, idx_val):
+
         estimator = self.estimator
         config = self.config
+        labels = labels.to(self.device)
+        features = features.to(self.device)
         if config["debug"]:
             print("\n=== train_adj ===")
         t = time.time()
         estimator.train()
         self.optimizer_adj.zero_grad()
 
-        loss_l1 = torch.norm(estimator.adj, 1)
-        loss_fro = torch.norm(estimator.adj - adj, p="fro")
-        normalized_adj = self.normalizer(estimator.adj + torch.eye(adj.shape[0]).to(self.device))
+        # loss_l1 = torch.norm(estimator.adj, 1)
+        # loss_fro = torch.norm(estimator.adj - adj, p="fro")
+        loss_l1 = torch.norm(adj, 1)
+        loss_fro = torch.norm(adj - adj, p="fro")
+        # normalized_adj = self.normalizer(estimator.adj + torch.eye(adj.shape[0]).to(self.device))
+        normalized_adj = self.normalizer(adj)
 
         if config["lambda_"]:
-            loss_smooth_feat = self.feature_smoothing(estimator.adj, features)
+            loss_smooth_feat = self.feature_smoothing(normalized_adj, features)
         else:
             loss_smooth_feat = 0 * loss_l1
 
@@ -281,18 +299,23 @@ class ProGNN(BaseModel):
         loss_gcn = F.nll_loss(output[idx_train], labels[idx_train])
         acc_train = accuracy(output[idx_train], labels[idx_train])
 
+        # loss_symmetric = torch.norm(
+        #     estimator.adj - estimator.adj.t(), p="fro"
+        # )
+
         loss_symmetric = torch.norm(
-            estimator.adj - estimator.adj.t(), p="fro"
+            adj - adj.t(), p="fro"
         )
 
-        loss_diffiential = (
+
+        loss_differential = (
             loss_fro
             + config["gamma"] * loss_gcn
             + config["lambda_"] * loss_smooth_feat
             + config["phi"] * loss_symmetric
         )
 
-        loss_diffiential.backward()
+        loss_differential.backward()
 
         self.optimizer_adj.step()
         loss_nuclear = 0 * loss_fro

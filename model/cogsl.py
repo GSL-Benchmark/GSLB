@@ -190,15 +190,14 @@ def construct_cogsl_data(dataset_name, adj, features, labels, train_mask, val_ma
 
     def diff_knn(adj, alpha, k):
         def _normalize(mx):
-            mx = mx.to_dense()
             rowsum = mx.sum(1) + 1e-6  # avoid NaN
-            r_inv = rowsum.pow(-1 / 2).flatten()
+            r_inv = rowsum.pow(-1/2).flatten()
             r_inv[torch.isinf(r_inv)] = 0.
             r_mat_inv = torch.diag(r_inv)
             mx = r_mat_inv @ mx
             mx = mx @ r_mat_inv
             return mx.to_sparse()
-        at = _normalize(adj)
+        at = _normalize(torch.tensor(adj))
         adj = alpha * torch.linalg.inv((torch.eye(adj.shape[0]) - (1 - alpha) * at))
         adj = sp.coo_matrix(adj)
         knn_adj = topk(k, adj)
@@ -236,7 +235,7 @@ def construct_cogsl_data(dataset_name, adj, features, labels, train_mask, val_ma
 
     print('Compute view2 adj...')
     start_time = time.time()
-    file_path = osp.join(osp.expanduser('~'), "datasets/" + dataset_name + "/" + "diff_40knn.npz")
+    file_path = osp.join(osp.expanduser('~'), "gslb_data/" + dataset_name + "/" + "diff_40knn.npz")
     if os.path.isfile(file_path):
         ori_view2 = sp.load_npz(file_path)
     else:
@@ -249,7 +248,7 @@ def construct_cogsl_data(dataset_name, adj, features, labels, train_mask, val_ma
 
     print('Compute view1 indices...')
     start_time = time.time()
-    file_path = osp.join(osp.expanduser('~'), "datasets/" + dataset_name + "/" + "adj_"+str(adj_hop)+"hop.pt")
+    file_path = osp.join(osp.expanduser('~'), "gslb_data/" + dataset_name + "/" + "adj_"+str(adj_hop)+"hop.pt")
     if os.path.isfile(file_path):
         ori_view1_indices = torch.load(file_path)
     else:
@@ -262,7 +261,7 @@ def construct_cogsl_data(dataset_name, adj, features, labels, train_mask, val_ma
 
     print('Compute view2 indices...')
     start_time = time.time()
-    file_path = osp.join(osp.expanduser('~'), "datasets/" + dataset_name + "/" + "diff_40knn_1hop.pt")
+    file_path = osp.join(osp.expanduser('~'), "gslb_data/" + dataset_name + "/" + "diff_40knn_1hop.pt")
     if os.path.isfile(file_path):
         ori_view2_indices = torch.load(file_path)
     else:

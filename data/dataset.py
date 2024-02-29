@@ -25,7 +25,7 @@ def normalize_adj(mx):
     """Normalize sparse adjacency matrix"""
     if type(mx) is not sp.lil.lil_matrix:
         mx = mx.tolil()
-    if mx[0, 0] == 0 :
+    if mx[0, 0] == 0:
         mx = mx + sp.eye(mx.shape[0])
     rowsum = np.array(mx.sum(1))
     r_inv = np.power(rowsum, -1/2).flatten()
@@ -132,29 +132,29 @@ class Dataset:
         else:
             self.root = osp.expanduser(osp.normpath(root))
 
-            if not use_mettack:
-                adj, self.features, self.labels = self.load_data()
-            else:
-                if self.name in ['cora', 'citeseer', 'polblogs']:
-                    if not osp.exists(osp.join(self.root, '{}_features.npz'.format(self.name))):
-                        url = 'https://raw.githubusercontent.com/likuanppd/STABLE/master/ptb_graphs/'
-                        self.download('{}_features.npz'.format(self.name), url)
-                    if not osp.exists(osp.join(self.root, '{}_labels.npy'.format(self.name))):
-                        url = 'https://raw.githubusercontent.com/likuanppd/STABLE/master/ptb_graphs/'
-                        self.download('{}_labels.npy'.format(self.name), url)
-                    features = sp.load_npz(osp.join(self.root, '{}_features.npz'.format(self.name)))
-                    self.labels = torch.LongTensor(np.load(osp.join(self.root, '{}_labels.npy'.format(self.name))))
+        if not use_mettack:
+            self.adj, self.features, self.labels = self.load_data()
+        else:
+            if self.name in ['cora', 'citeseer', 'polblogs']:
+                if not osp.exists(osp.join(self.root, '{}_features.npz'.format(self.name))):
+                    url = 'https://github.com/likuanppd/STABLE/tree/main/ptb_graphs/'
+                    self.download('{}_features.npz'.format(self.name), url)
+                if not osp.exists(osp.join(self.root, '{}_labels.npy'.format(self.name))):
+                    url = 'https://github.com/likuanppd/STABLE/tree/main/ptb_graphs/'
+                    self.download('{}_labels.npy'.format(self.name), url)
+                features = sp.load_npz(osp.join(self.root, '{}_features.npz'.format(self.name)))
+                self.labels = torch.LongTensor(np.load(osp.join(self.root, '{}_labels.npy'.format(self.name))))
 
-                    idx_train = np.load(osp.join(self.root, 'mettack_{}_{}_idx_train.npy'.format(self.name, ptb_rate)))
-                    idx_val = np.load(osp.join(self.root, 'mettack_{}_{}_idx_val.npy'.format(self.name, ptb_rate)))
-                    idx_test = np.load(osp.join(self.root, 'mettack_{}_{}_idx_test.npy'.format(self.name, ptb_rate)))
-                    adj = torch.load(osp.join(self.root, 'mettack_{}_{}.pt'.format(self.name, ptb_rate)))
-                    adj = to_scipy(adj)
-                    _, features = to_tensor(adj, features)
-                    self.features = features.to_dense()
-                    self.get_mask(self.labels, idx_train, idx_val, idx_test)
-            
-            self.adj = adj
+                idx_train = np.load(osp.join(self.root, 'mettack_{}_{}_idx_train.npy'.format(self.name, ptb_rate)))
+                idx_val = np.load(osp.join(self.root, 'mettack_{}_{}_idx_val.npy'.format(self.name, ptb_rate)))
+                idx_test = np.load(osp.join(self.root, 'mettack_{}_{}_idx_test.npy'.format(self.name, ptb_rate)))
+                adj = torch.load(osp.join(self.root, 'mettack_{}_{}.pt'.format(self.name, ptb_rate)))
+                self.adj = to_scipy(adj)
+                _, features = to_tensor(adj, features)
+                self.features = features.to_dense()
+                self.get_mask(self.labels, idx_train, idx_val, idx_test)
+
+            #self.adj = adj
 
     def to(self, device):
         self.adj = self.adj.to(device)
@@ -212,7 +212,7 @@ class Dataset:
         labels = torch.LongTensor(labels)
 
         return adj, features, labels
-    
+
     def largest_connected_components(self, adj, n_components=1):
         """Select k largest connected components.
 
@@ -239,37 +239,37 @@ class Dataset:
 
         if self.name in ['ogbn-arxiv']:
             return self.load_ogb()
-        
+
         if self.name in ['cornell', 'wisconsin', 'texas', 'actor']:
             return self.load_heterophilous()
-        
+
     @property
     def num_feat(self):
         return self.features.shape[1]
-    
+
     @property
     def num_class(self):
         return self.labels.max().item() + 1
-    
+
     @property
     def num_nodes(self):
         return self.features.shape[0]
-    
+
     @property
     def num_edges(self):
         return int(np.sum(self.adj) / 2)
-    
+
     @property
     def edge_homophily(self):
         src = sp.coo_matrix(self.adj).row
         dst = sp.coo_matrix(self.adj).col
         homophily_ratio = 1.0 * torch.sum((self.labels[src] == self.labels[dst])) / src.shape[0]
         return homophily_ratio.item()
-    
+
     @property
     def avg_degree(self):
         return np.mean(np.sum(self.adj, axis=1))
-    
+
     def to(self, device):
         self.features = self.features.to(device)
         self.adj = self.adj.to(device)
@@ -295,7 +295,7 @@ class Dataset:
             )
 
     def load_citation_dataset(self):
-        url = "https://raw.githubusercontent.com/tkipf/gcn/master/gcn/data/"
+        url = "https://github.com/tkipf/gcn/tree/master/gcn/data/"
         names = ['x', 'y', 'tx', 'ty', 'allx', 'ally', 'graph']
         objects = []
         for i in range(len(names)):
@@ -404,9 +404,9 @@ class Dataset:
         self.get_mask(labels, train_idx, valid_idx, test_idx)
 
         return adj, features, labels
-    
+
     def load_heterophilous(self):
-        url = "https://raw.githubusercontent.com/yandex-research/heterophilous-graphs/master/data/"
+        url = "https://github.com/yandex-research/heterophilous-graphs/tree/main/data/"
 
         name = f'{self.name}.npz'
         data_filename = osp.join(self.root, name)
@@ -460,11 +460,11 @@ class Dataset:
         return onehot_mx
 
 
-if __name__ == "__main__":
-    from GSL.data import Dataset
+# if __name__ == "__main__":
+#     from GSL.data import Dataset
 
-    # Citation dataset
-    data_path = osp.join(osp.expanduser('~'), 'datasets')
-    data = Dataset(root=data_path, name="cora", seed=0)
-    adj, features, labels = data.adj, data.features, data.labels
-    train_mask, val_mask, test_mask = data.train_mask, data.val_mask, data.test_mask
+#     # Citation dataset
+#     data_path = osp.join(osp.expanduser('~'), 'datasets')
+#     data = Dataset(root=data_path, name="cora", seed=0)
+#     adj, features, labels = data.adj, data.features, data.labels
+#     train_mask, val_mask, test_mask = data.train_mask, data.val_mask, data.test_mask

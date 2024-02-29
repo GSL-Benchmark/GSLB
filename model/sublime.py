@@ -9,19 +9,24 @@ import torch
 import copy
 import torch.nn as nn
 import torch.nn.functional as F
+from scipy.sparse import coo_matrix
 
+#test git push
 
 class SUBLIME(BaseModel):
     '''
     Towards Unsupervised Deep Graph Structure Learning (WWW 2022')
     '''
-    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, params):
-        super(SUBLIME, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device, params)
+    # def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, params):
+        # super(SUBLIME, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device, params)
+    def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device):
+        super(SUBLIME, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
         self.num_features = num_features
         self.num_classes = num_classes
+        self.device = device
 
     def fit(self, dataset, split_num=0):
-        adj, features, labels = dataset.adj.clone(), dataset.features.clone(), dataset.labels
+        adj, features, labels = dataset.adj.copy(), dataset.features.clone(), dataset.labels
         if dataset.name in ['cornell', 'texas', 'wisconsin', 'actor']:
             train_mask = dataset.train_masks[split_num % 10]
             val_mask = dataset.val_masks[split_num % 10]
@@ -40,7 +45,15 @@ class SUBLIME(BaseModel):
             #     anchor_adj_raw = adj
             # else:
             #     anchor_adj_raw = torch.from_numpy(adj)
-            anchor_adj_raw = adj
+            #anchor_adj_raw = adj
+            coo = coo_matrix(adj)
+            values = coo.data
+            indices = np.vstack((coo.row, coo.col))
+            i = torch.LongTensor(indices)
+            v = torch.FloatTensor(values)
+            shape = coo.shape
+            adj = torch.sparse_coo_tensor(i, v, torch.Size(shape)).to(self.device)
+            anchor_adj_raw = adj.to_dense()
 
         anchor_adj = normalize(anchor_adj_raw, 'sym', self.config['sparse'])
 

@@ -1,4 +1,5 @@
-from torch.utils.data.sampler import SubsetRandomSampler
+from torch.utils.data.sampler import Sampler, SubsetRandomSampler
+from torch.utils.data import random_split
 from dgl.nn import AvgPooling, GraphConv, MaxPooling, GATConv, SAGEConv, GINConv
 import dgl.function as fn
 from dgl.base import ALL, is_all
@@ -19,6 +20,7 @@ from GSL.model import BaseModel
 from GSL.utils import *
 from GSL.learner import *
 from GSL.encoder import *
+from GSL.encoder import gin
 from GSL.metric import *
 from GSL.processor import *
 
@@ -37,9 +39,10 @@ class HGPSL(BaseModel):
             else:
                 self.config.batch_size = 80
                 self.config.test_batch_size = 60
-        
+
         self.num_features = num_features
         self.num_classes = num_classes
+        self.device = device
         self.num_layers = self.config.num_layers
         self.backbone = self.config.backbone
         self.hidden_dim = self.config.hidden_dim
@@ -115,7 +118,8 @@ class HGPSL(BaseModel):
             optimizer.zero_grad()
             batch_graphs, batch_labels = batch
             batch_graphs = batch_graphs.to(self.device)
-            out = self(batch_graphs, batch_graphs.ndata["feat"])
+            batch_labels = batch_labels.long().to(self.device)
+            out = self.forward(batch_graphs, batch_graphs.ndata["node_attr"].float())
             loss = self.loss_func(out, batch_labels)
             loss.backward()
             optimizer.step()
@@ -123,7 +127,7 @@ class HGPSL(BaseModel):
             total_loss += loss.item()
 
         return total_loss / num_batches
-    
+
     def loss_func(self, out, batch_labels):
         if self.loss_type == 'L1':
             batch_labels = batch_labels.to(self.device)
@@ -145,12 +149,12 @@ class HGPSL(BaseModel):
             # from IPython import embed; embed()
             result = eval_ap(pred.cpu().numpy(), labels.numpy())
         else:
-            pred = pred.argmax(dim=1).cpu()
+            pred = pred.argmax(dim=1)
             result = pred.eq(labels.reshape(-1, pred.size(0))).sum().item()
             # from IPython import embed; embed(header='in metric_func')
-        
+
         return result
-    
+
 
     def test(self, loader):
         self.eval()
@@ -161,8 +165,9 @@ class HGPSL(BaseModel):
             for batch in loader:
                 batch_graphs, batch_labels = batch
                 num_graphs += batch_labels.size(0)
+                batch_labels = batch_labels.long().to(self.device)
                 batch_graphs = batch_graphs.to(self.device)
-                out = self(batch_graphs, batch_graphs.ndata["feat"])
+                out = self.forward(batch_graphs, batch_graphs.ndata["node_attr"].float())
                 loss += self.loss_func(out, batch_labels)
                 correct += self.metric_func(out, batch_labels)
         result = correct / num_graphs
@@ -173,7 +178,7 @@ class HGPSL(BaseModel):
         folds, epochs, batch_size, test_batch_size, lr, weight_decay \
             = self.config.folds, self.config.epochs, self.config.batch_size, self.config.test_batch_size, \
             self.config.lr, self.config.weight_decay
-        
+
         val_losses, val_accs, test_accs, durations = [], [], [], []
         for fold, (train_idx, test_idx, val_idx) in enumerate(zip(*k_fold(dataset, folds, self.config.seed))):
 
@@ -201,7 +206,7 @@ class HGPSL(BaseModel):
                 train_result, _ = self.test(train_loader)
                 val_result, val_loss = self.test(val_loader)
                 test_result, _ = self.test(test_loader)
-                
+
                 val_losses.append(val_loss)
                 fold_val_losses.append(val_loss)
                 fold_val_accs.append(val_result)
@@ -241,7 +246,7 @@ class HGPSL(BaseModel):
 
             print('Fold: {:d}, train result: {:.3f}, Val loss: {:.3f}, Val result: {:.5f}, Test result: {:.3f}'
                   .format(eval_info["fold"], eval_info["train_result"], fold_val_loss, fold_val_acc, fold_test_acc))
-        
+
         val_losses, val_accs, test_accs, duration = torch.tensor(val_losses), torch.tensor(val_accs), torch.tensor(test_accs), torch.tensor(
             durations)
         val_losses, val_accs, test_accs = val_losses.view(folds, epochs), val_accs.view(folds, epochs), test_accs.view(
@@ -259,25 +264,30 @@ class HGPSL(BaseModel):
               .format(val_loss_mean, test_acc_mean, test_acc_std, duration_mean))
 
         self.best_result = test_acc_mean
-    
-    
+
+
     def fit_without_kfold(self, dataset):
-        split_dict = dataset.get_idx_split()
-        train_dataset, val_dataset, test_dataset = (Subset(dataset, split_dict['train']), 
-                                                Subset(dataset, split_dict['val']), 
-                                                Subset(dataset, split_dict['test']))
-        train_loader = GraphDataLoader(train_dataset, batch_size=self.batch_size)
-        val_loader = GraphDataLoader(val_dataset, batch_size=self.batch_size)
-        test_loader = GraphDataLoader(test_dataset, batch_size=self.batch_size)
+
+        for i in range(len(dataset)):
+            dataset.graph_lists[i] = dgl.add_self_loop(dataset.graph_lists[i])
+
+        num_training = int(len(dataset) * 0.8)
+        num_val = int(len(dataset) * 0.1)
+        num_test = len(dataset) - num_val - num_training
+        train_set, val_set, test_set = random_split(dataset, [num_training, num_val, num_test])
+
+        train_loader = GraphDataLoader(train_set, batch_size=self.config.batch_size)
+        val_loader = GraphDataLoader(val_set, batch_size=self.config.test_batch_size)
+        test_loader = GraphDataLoader(test_set, batch_size=self.config.test_batch_size)
 
         self.reset_parameters()
         optimizer = torch.optim.Adam(
-                self.parameters(), lr=self.lr, weight_decay=self.weight_decay
+                self.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay
         )
 
         best_test_result, best_val = 0, float("inf")
 
-        for epoch in range(self.epochs):
+        for epoch in range(self.config.epochs):
             loss = self.train_HGPSL(train_loader, optimizer)
             train_result, _ = self.test(train_loader)
             val_result, val_loss = self.test(val_loader)
@@ -299,7 +309,7 @@ class HGPSL(BaseModel):
 
             if bad_cound >= self.patience:
                 break
-        
+
         print('Final Test Perf: {:.4f}'.format(best_test_result))
         return best_test_result
 
@@ -346,7 +356,7 @@ class WeightedGraphConv(GraphConv):
                 n_feat = self._activation(n_feat)
             # from IPython import embed; embed(header="in WeightedGraphConv2")
             return n_feat
-        
+
 class WeightedGATConv(GATConv):
     r"""
     Description
@@ -424,7 +434,7 @@ class WeightedSAGEConv(SAGEConv):
             if e_feat is not None:
                 graph.edata['_e_feat'] = e_feat
                 msg_fn = fn.u_mul_e('h', '_e_feat', 'm')
-            
+
             h_self = feat_dst
 
             if graph.number_of_edges() == 0:
@@ -443,16 +453,17 @@ class WeightedSAGEConv(SAGEConv):
 
             if self.activation is not None:
                 rst = self.activation(rst)
-            
+
             if self.norm is not None:
                 rst = self.norm(rst)
 
             # from IPython import embed; embed(header='in WeightedSageConv2')
 
             return rst
-        
+
 
 class WeightedGINConv(GINConv):
+
     r"""
     Description
     -----------
@@ -468,8 +479,9 @@ class WeightedGINConv(GINConv):
     e_feat : torch.Tensor, optional
         The edge features. Default: :obj:`None`
     """
+
     def __init__(self, apply_func, learn_eps=False):
-        super(WeightedGINConv ,self).__init__(apply_func, learn_eps=learn_eps)
+        super(WeightedGINConv, self).__init__(apply_func, learn_eps=learn_eps)
 
 
     def forward(self, graph: DGLGraph, n_feat, e_feat=None):
@@ -493,11 +505,11 @@ class WeightedGINConv(GINConv):
                 rst = self.activation(rst)
             # from IPython import embed; embed(header='in gin conv1')
             return rst
-        
+
     def reset_parameters(self):
         self.apply_func.reset_parameters()
         # self.eps = nn.Parameter(torch.FloatTensor([0])).to(self.apply_func.device)
-        
+
 
 CONV_TYPE_DICT={
     'GCN': WeightedGraphConv,
@@ -520,7 +532,7 @@ class ConvPoolReadout(torch.nn.Module):
         sl: bool = True,
         lamb: float = 1.0,
         pool: bool = True,
-        conv_type: str = 'SAGE',        
+        conv_type: str = 'SAGE',
     ):
         super(ConvPoolReadout, self).__init__()
         self.use_pool = pool
@@ -528,6 +540,7 @@ class ConvPoolReadout(torch.nn.Module):
             self.conv = CONV_TYPE_DICT[conv_type](in_feat, out_feat)
         else:
             mlp = gin.MLP(in_feat, in_feat, out_feat)
+            #mlp = MLP(1, in_feat, in_feat, out_feat)
             self.conv = CONV_TYPE_DICT[conv_type](mlp, learn_eps=True)
         if pool:
             self.pool = HGPSLPool(
@@ -556,7 +569,7 @@ class ConvPoolReadout(torch.nn.Module):
             [self.avgpool(graph, out), self.maxpool(graph, out)], dim=-1
         )
         return graph, out, e_feat, readout
-    
+
 
 class NodeInfoScoreLayer(nn.Module):
     r"""
@@ -855,7 +868,7 @@ class HGPSLPool(nn.Module):
             pool_graph.set_batch_num_nodes(next_batch_num_nodes)
 
         return pool_graph, feat, e_feat, perm
-    
+
 
 def topk(
     x: torch.Tensor,

@@ -98,7 +98,7 @@ def normalize(adj, mode, sparse=False):
             exit("wrong norm mode")
         new_values = adj.values() * D_value
 
-        return torch.sparse.FloatTensor(adj.indices(), new_values, adj.size())
+        return torch.sparse_coo_tensor(adj.indices(), new_values, adj.size())
 
 
 def accuracy(output, labels):
@@ -210,7 +210,7 @@ def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     )
     values = torch.from_numpy(sparse_mx.data)
     shape = torch.Size(sparse_mx.shape)
-    return torch.sparse.FloatTensor(indices, values, shape)
+    return torch.sparse_coo_tensor(indices, values, shape)
 
 
 class AverageMeter(object):
@@ -566,7 +566,7 @@ def mx_normalize_features(mx):
     r_mat_inv = sp.diags(r_inv)
     mx = r_mat_inv.dot(mx)
     return mx
-    
+
 
 def dense_adj_to_edge_index(adj):
     edge_index = sp.coo_matrix(adj.cpu())
@@ -581,12 +581,15 @@ def k_fold(dataset, folds, seed):
     test_indices, train_indices = [], []
     if isinstance(dataset, DGLDataset):
         labels = dataset.graph_labels
-        for _, idx in skf.split(torch.zeros(len(dataset)), labels):
+        for _, idx in skf.split(torch.zeros(dataset.adj.shape[0]), labels):
             test_indices.append(torch.from_numpy(idx).to(torch.long))
-    elif isinstance(dataset, list):
-        for _, idx in skf.split(
-            torch.zeros(len(dataset)), [data.labels for data in dataset]
-        ):
+    # elif isinstance(dataset, list):
+        #for _, idx in skf.split(
+        #     torch.zeros(len(dataset)), [data.labels for data in dataset]
+        # ):
+    else:
+        labels = dataset.labels
+        for _, idx in skf.split(torch.zeros(len(dataset)), labels):
             test_indices.append(torch.from_numpy(idx).to(torch.long))
 
     val_indices = [test_indices[i - 1] for i in range(folds)]
@@ -1159,7 +1162,7 @@ def shuffle_splits_(data, seed=None) -> None:
                                       test_size=test_size.cpu(),
                                       train_size=val_size.cpu() + train_size.cpu(),
                                       random_state=seed)
-    
+
     train_val_indices, test_indices = next(splitter.split(data.features.cpu(), data.labels.cpu()))
 
     train_val_splitter = StratifiedShuffleSplit(n_splits=1,
@@ -1176,5 +1179,34 @@ def shuffle_splits_(data, seed=None) -> None:
     train_mask = indices_to_mask(train_indices, train_mask.size(0))
     val_mask = indices_to_mask(val_indices, val_mask.size(0))
     test_mask = indices_to_mask(test_indices, test_mask.size(0))
-    
+
+    data.train_mask, data.val_mask, data.test_mask = train_mask, val_mask, test_mask
+
+
+def get_idx_split(data, seed=None) -> None:
+    train_mask, val_mask, test_mask = data.train_mask, data.val_mask, data.test_mask
+    train_size, val_size, test_size = train_mask.sum(), val_mask.sum(), test_mask.sum()
+
+    splitter = StratifiedShuffleSplit(n_splits=1,
+                                      test_size=test_size.cpu(),
+                                      train_size=val_size.cpu() + train_size.cpu(),
+                                      random_state=seed)
+
+    train_val_indices, test_indices = next(splitter.split(data.features.cpu(), data.labels.cpu()))
+
+    train_val_splitter = StratifiedShuffleSplit(n_splits=1,
+                                                test_size=val_size.cpu(),
+                                                train_size=train_size.cpu(),
+                                                random_state=seed)
+    train_indices, val_indices = next(train_val_splitter.split(data.features[train_val_indices].cpu(), data.labels[train_val_indices].cpu()))
+    train_indices, val_indices = train_val_indices[train_indices], train_val_indices[val_indices]
+
+    train_indices = torch.as_tensor(train_indices, device=data.features.device)
+    val_indices = torch.as_tensor(val_indices, device=data.features.device)
+    test_indices = torch.as_tensor(test_indices, device=data.features.device)
+
+    train_mask = indices_to_mask(train_indices, train_mask.size(0))
+    val_mask = indices_to_mask(val_indices, val_mask.size(0))
+    test_mask = indices_to_mask(test_indices, test_mask.size(0))
+
     data.train_mask, data.val_mask, data.test_mask = train_mask, val_mask, test_mask

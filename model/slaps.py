@@ -11,24 +11,29 @@ import torch.nn as nn
 class SLAPS(BaseModel):
     def __init__(self, num_features, num_classes, metric, config_path, dataset_name, device, data):
         super(SLAPS, self).__init__(num_features, num_classes, metric, config_path, dataset_name, device)
-        features = data.features
-        self.features = features
+
+        self.features = data.features
+        #self.features = features
         self.Adj = None
+        self.device = device
 
         self.model1 = GCN_DAE(config=self.config, nlayers=self.config.nlayers_adj, in_dim=num_features, hidden_dim=self.config.hidden_adj,
                          num_classes=num_features,
                          dropout=self.config.dropout1, dropout_adj=self.config.dropout_adj1,
-                         features=features.cpu(), k=self.config.k, knn_metric=self.config.knn_metric, i_=self.config.i,
+                         features=self.features.cpu(), k=self.config.k, knn_metric=self.config.knn_metric, i_=self.config.i,
                          non_linearity=self.config.non_linearity, normalization=self.config.normalization,
                          mlp_h=self.config.mlp_h,
                          learner=self.config.learner, sparse=self.config.sparse,
-                         mlp_act=self.config.mlp_act).to(device)
+                         mlp_act=self.config.mlp_act).to(self.device)
         self.model2 = GCN_C(in_channels=num_features, hidden_channels=self.config.hidden, out_channels=num_classes,
                        num_layers=self.config.nlayers, dropout=self.config.dropout2,
                        dropout_adj=self.config.dropout_adj2,
-                       sparse=self.config.sparse).to(device)
+                       sparse=self.config.sparse).to(self.device)
 
     def get_loss_masked_features(self, model, features, mask, ogb, noise, loss_t):
+
+        features = features.to(self.device)
+
         if ogb:
             if noise == 'mask':
                 masked_features = features * (1 - mask)
@@ -52,6 +57,11 @@ class SLAPS(BaseModel):
         return loss, Adj
 
     def get_loss_learnable_adj(self, model, mask, features, labels, Adj):
+
+        features = features.to(self.device)
+        mask = mask.to(self.device)
+        labels = labels.to(self.device)
+
         logits = model(features, Adj)
         logp = F.log_softmax(logits, 1)
         loss = F.nll_loss(logp[mask], labels[mask], reduction='mean')
@@ -191,6 +201,7 @@ class GCN_DAE(nn.Module):
 
 
 class GCN_C(nn.Module):
+
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout, dropout_adj, sparse):
         super(GCN_C, self).__init__()
 
@@ -213,6 +224,7 @@ class GCN_C(nn.Module):
         self.sparse = sparse
 
     def forward(self, x, adj_t):
+
         if self.sparse:
             Adj = adj_t
             Adj.edata['w'] = F.dropout(Adj.edata['w'], p=self.dropout_adj_p, training=self.training)

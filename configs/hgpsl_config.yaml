@@ -1,9 +1,9 @@
 Default:
   seed: 0
   folds: 10
-  epochs: 5
-  batch_size: 512
-  test_batch_size: 512
+  epochs: 200
+  batch_size: 80
+  test_batch_size: 60
   sample: True
   lr: 1.0e-3
   weight_decay: 1.0e-3
